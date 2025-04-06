@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: photo-cloud-server
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yml
+    enabled: true
+  jpa:
+    show-sql: true
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+
+server:
+  servlet:
+    context-path: /
+  port: 8080
+
+#token:
+#  signing:
+#    key: ${JWT_KEY}
+
+logging:
+  level:
+    liquibase: info
