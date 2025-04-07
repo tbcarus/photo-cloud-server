@@ -1,4 +1,4 @@
-package model;
+package ru.tbcarus.photocloudserver.model;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;

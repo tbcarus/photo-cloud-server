@@ -1,4 +1,4 @@
-package model;
+package ru.tbcarus.photocloudserver.model;
 
 import org.springframework.security.core.GrantedAuthority;
 

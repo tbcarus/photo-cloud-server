@@ -20,9 +20,9 @@ server:
     context-path: /
   port: 8080
 
-#token:
-#  signing:
-#    key: ${JWT_KEY}
+token:
+  signing:
+    key: ${JWT_KEY}
 
 logging:
   level:

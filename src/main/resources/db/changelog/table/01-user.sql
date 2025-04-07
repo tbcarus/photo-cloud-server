@@ -11,3 +11,12 @@ CREATE TABLE IF NOT EXISTS users
     banned   bool DEFAULT FALSE NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_uindex ON users (email);
+
+
+CREATE TABLE user_roles
+(
+    user_id INTEGER NOT NULL,
+    role    VARCHAR(255),
+    CONSTRAINT user_roles_idx UNIQUE (user_id, role),
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+);
