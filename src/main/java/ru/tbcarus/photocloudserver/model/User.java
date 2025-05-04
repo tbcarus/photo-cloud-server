@@ -1,21 +1,22 @@
 package ru.tbcarus.photocloudserver.model;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 @Entity
 @Table(name = "users")
-@Data
+@Getter
+@Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
@@ -27,7 +28,8 @@ public class User implements UserDetails {
 
     private String email;
     private String password;
-    private String name;
+    private String firstName;
+    private String lastName;
     private boolean enabled;
     private boolean banned;
 
@@ -36,6 +38,12 @@ public class User implements UserDetails {
     @ElementCollection(fetch = FetchType.EAGER)
     @Column(name = "role")
     private Set<Role> roles;
+
+    @CreationTimestamp
+    private LocalDateTime createDate;
+
+    @UpdateTimestamp
+    private LocalDateTime lastUpdate;
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
