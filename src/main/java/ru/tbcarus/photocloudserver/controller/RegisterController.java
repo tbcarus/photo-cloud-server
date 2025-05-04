@@ -19,13 +19,13 @@ import ru.tbcarus.photocloudserver.service.UserService;
 @Tag(name = "Registration & Authentication")
 public class RegisterController {
     public static final String USER_URL = "/api/user";
-    public static final String REGISTER_URL = "/api/v1/auth/register";
-    public static final String VERIFY_EMAIL_URL = "/api/v1/auth/verify-email";
-    public static final String RESEND_VERIFY_EMAIL_URL = "/api/v1/auth/resend-verify-email";
-    public static final String LOGIN_URL = "/api/v1/auth/login";
     public static final String REFRESH_TOKEN_URL = "/api/user/refresh-token";
-    public static final String FORGOT_PASSWORD_URL = "/api/v1/auth/forgot-password";
-    public static final String RESET_PASSWORD_URL = "/api/v1/auth/reset-password";
+    public static final String REGISTER_URL = "/api/auth/register";
+    public static final String LOGIN_URL = "/api/auth/login";
+    public static final String VERIFY_EMAIL_URL = "/api/auth/verify-email";
+    public static final String RESEND_VERIFY_EMAIL_URL = "/api/auth/resend-verify-email";
+    public static final String FORGOT_PASSWORD_URL = "/api/auth/forgot-password";
+    public static final String RESET_PASSWORD_URL = "/api/auth/reset-password";
 
     private final UserService userService;
 

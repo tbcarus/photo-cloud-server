@@ -10,6 +10,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import ru.tbcarus.photocloudserver.config.filter.JwtAuthenticationFilter;
 import ru.tbcarus.photocloudserver.controller.RegisterController;
+import ru.tbcarus.photocloudserver.controller.RootController;
 
 @Configuration
 @EnableWebSecurity
@@ -23,7 +24,7 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 .authorizeHttpRequests((requests) -> requests
-                        .requestMatchers(RegisterController.REGISTER_URL,
+                        .requestMatchers(RootController.TEST_URL, RegisterController.REGISTER_URL,
                                 RegisterController.LOGIN_URL, RegisterController.REFRESH_TOKEN_URL,
                                 "/swagger-ui/**", "/swagger-resources/*", "/v3/api-docs/**").permitAll()
                         .anyRequest().authenticated())
