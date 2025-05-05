@@ -27,11 +27,11 @@ public class UserService implements UserDetailsService {
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
 
-    public User register(UserRegisterDto userRegisterDto) {
-        if (userRepository.existsByEmail(userRegisterDto.getEmail().toLowerCase())) {
-            throw new EntityAlreadyExistException(userRegisterDto.getEmail(), String.format("User %s already exist", userRegisterDto.getEmail()));
+    public User register(RegisterRequest registerRequest) {
+        if (userRepository.existsByEmail(registerRequest.email().toLowerCase())) {
+            throw new EntityAlreadyExistException(registerRequest.email(), String.format("User %s already exist", registerRequest.email()));
         }
-        User user = userRegisterMapper.toUser(userRegisterDto);
+        User user = userRegisterMapper.toUser(registerRequest);
         user.setRoles(Set.of(Role.USER));
         user.setEmail(user.getEmail().toLowerCase());
         user.setPassword(passwordEncoder.encode(user.getPassword()));
@@ -44,9 +44,9 @@ public class UserService implements UserDetailsService {
     }
 
     public LoginResponse login(LoginRequest loginRequest) {
-        User user = getUserByEmail(loginRequest.getEmail());
-        if (!passwordEncoder.matches(loginRequest.getPassword(), user.getPassword())) {
-            throw new EntityNotFoundException(loginRequest.getEmail(), String.format("Wrong user %s or password", loginRequest.getEmail()));
+        User user = getUserByEmail(loginRequest.email());
+        if (!passwordEncoder.matches(loginRequest.password(), user.getPassword())) {
+            throw new EntityNotFoundException(loginRequest.email(), String.format("Wrong user %s or password", loginRequest.email()));
         }
         String accessToken = jwtService.generateAccessToken(user);
         String refreshToken = jwtService.generateRefreshToken(user);

@@ -31,8 +31,8 @@ public class RegisterController {
 
     @Operation(summary = "User registration")
     @PostMapping(REGISTER_URL)
-    public ResponseEntity<Void> register(@Validated @RequestBody UserRegisterDto userRegisterDto) {
-        User savedUser = userService.register(userRegisterDto);
+    public ResponseEntity<Void> register(@Validated @RequestBody RegisterRequest registerRequest) {
+        User savedUser = userService.register(registerRequest);
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
@@ -45,7 +45,7 @@ public class RegisterController {
     @Operation(summary = "Take new access token")
     @PostMapping(REFRESH_TOKEN_URL)
     public ResponseEntity<RefreshResponse> refresh(@RequestBody RefreshRequest refreshRequest) {
-        return ResponseEntity.status(HttpStatus.OK).body(userService.refreshToken(refreshRequest.getRefreshToken()));
+        return ResponseEntity.status(HttpStatus.OK).body(userService.refreshToken(refreshRequest.refreshToken()));
     }
 
     @GetMapping(USER_URL+"/test")
