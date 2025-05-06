@@ -6,10 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.model.dto.*;
 import ru.tbcarus.photocloudserver.service.UserService;
@@ -34,6 +31,13 @@ public class RegisterController {
     public ResponseEntity<Void> register(@Validated @RequestBody RegisterRequest registerRequest) {
         User savedUser = userService.register(registerRequest);
         return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    @Operation(summary = "Verification user registration")
+    @GetMapping(VERIFY_EMAIL_URL)
+    public ResponseEntity<String> verifyEmail(@RequestParam String email, @RequestParam String code) {
+        userService.verifyEmail(email, code);
+        return ResponseEntity.status(HttpStatus.OK).body(String.format("User %s was verified", "dsd"));
     }
 
     @Operation(summary = "User authentication")

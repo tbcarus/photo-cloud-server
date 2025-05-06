@@ -38,6 +38,9 @@ public class UserService implements UserDetailsService {
         return userRepository.save(user);
     }
 
+    public void verifyEmail(String email, String code) {
+    }
+
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         return userRepository.findByEmailIgnoreCase(username).get();

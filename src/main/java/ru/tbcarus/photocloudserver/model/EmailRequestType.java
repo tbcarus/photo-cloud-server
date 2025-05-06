@@ -1,8 +1,8 @@
 package ru.tbcarus.photocloudserver.model;
 
 public enum EmailRequestType {
-    ACTIVATE ("Spending. Активация нового пользователя"),
-    RESET_PASSWORD ("Spending. Восстановление пароля");
+    ACTIVATE ("Photo-cloud. Активация нового пользователя"),
+    PASSWORD_RESET ("Photo-cloud. Восстановление пароля");
 
     EmailRequestType(String title) {
         this.title = title;

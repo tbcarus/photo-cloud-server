@@ -24,20 +24,21 @@ public class EmailRequest {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
-    @ManyToOne(fetch = FetchType.EAGER)
-    @OnDelete(action = OnDeleteAction.CASCADE)
-    private User user; // владелец запроса
-
     private String code; // код
 
     @Enumerated(EnumType.STRING)
     private EmailRequestType type; // тип запроса
 
-    @CreationTimestamp
-    @Column(name = "create_date", updatable = false)
-    private LocalDateTime createDate;
-
     private boolean used; // была ли использована ссылка
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @OnDelete(action = OnDeleteAction.CASCADE)
+    @JoinColumn(name = "user_id")
+    private User user; // владелец запроса
+
+    @CreationTimestamp
+    @Column(updatable = false)
+    private LocalDateTime createDate;
 
     public EmailRequest(EmailRequestType type) {
         this.type = type;
