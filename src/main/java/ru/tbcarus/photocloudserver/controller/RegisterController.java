@@ -33,13 +33,6 @@ public class RegisterController {
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
 
-    @Operation(summary = "Verification user registration")
-    @GetMapping(VERIFY_EMAIL_URL)
-    public ResponseEntity<String> verifyEmail(@RequestParam String email, @RequestParam String code) {
-        userService.verifyEmail(email, code);
-        return ResponseEntity.status(HttpStatus.OK).body(String.format("User %s was verified", "dsd"));
-    }
-
     @Operation(summary = "User authentication")
     @PostMapping(LOGIN_URL)
     public ResponseEntity<LoginResponse> login(@Validated @RequestBody LoginRequest loginRequest) {

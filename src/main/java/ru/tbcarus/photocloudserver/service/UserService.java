@@ -8,6 +8,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import ru.tbcarus.photocloudserver.exception.EntityAlreadyExistException;
 import ru.tbcarus.photocloudserver.exception.EntityNotFoundException;
+import ru.tbcarus.photocloudserver.model.EmailRequestType;
 import ru.tbcarus.photocloudserver.model.RefreshToken;
 import ru.tbcarus.photocloudserver.model.Role;
 import ru.tbcarus.photocloudserver.model.User;
@@ -26,6 +27,8 @@ public class UserService implements UserDetailsService {
     private final UserRegisterMapper userRegisterMapper;
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
+    private final ConfirmService confirmService;
+    private final EmailService emailService;
 
     public User register(RegisterRequest registerRequest) {
         if (userRepository.existsByEmail(registerRequest.email().toLowerCase())) {
@@ -35,10 +38,10 @@ public class UserService implements UserDetailsService {
         user.setRoles(Set.of(Role.USER));
         user.setEmail(user.getEmail().toLowerCase());
         user.setPassword(passwordEncoder.encode(user.getPassword()));
-        return userRepository.save(user);
-    }
-
-    public void verifyEmail(String email, String code) {
+        User savedUser = userRepository.save(user);
+        String code = confirmService.generateCode(user, EmailRequestType.ACTIVATE);
+        emailService.sendVerificationEmail(user.getEmail(), code);
+        return savedUser;
     }
 
     @Override
