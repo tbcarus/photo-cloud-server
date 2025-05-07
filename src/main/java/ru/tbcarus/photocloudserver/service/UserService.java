@@ -1,6 +1,8 @@
 package ru.tbcarus.photocloudserver.service;
 
+import jakarta.mail.MessagingException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -8,10 +10,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import ru.tbcarus.photocloudserver.exception.EntityAlreadyExistException;
 import ru.tbcarus.photocloudserver.exception.EntityNotFoundException;
-import ru.tbcarus.photocloudserver.model.EmailRequestType;
-import ru.tbcarus.photocloudserver.model.RefreshToken;
-import ru.tbcarus.photocloudserver.model.Role;
-import ru.tbcarus.photocloudserver.model.User;
+import ru.tbcarus.photocloudserver.model.*;
 import ru.tbcarus.photocloudserver.model.dto.*;
 import ru.tbcarus.photocloudserver.model.dto.mapper.UserRegisterMapper;
 import ru.tbcarus.photocloudserver.repository.UserRepository;
@@ -21,13 +20,14 @@ import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class UserService implements UserDetailsService {
 
     private final UserRepository userRepository;
     private final UserRegisterMapper userRegisterMapper;
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
-    private final ConfirmService confirmService;
+    private final EmailRequestService emailRequestService;
     private final EmailService emailService;
 
     public User register(RegisterRequest registerRequest) {
@@ -39,8 +39,12 @@ public class UserService implements UserDetailsService {
         user.setEmail(user.getEmail().toLowerCase());
         user.setPassword(passwordEncoder.encode(user.getPassword()));
         User savedUser = userRepository.save(user);
-        String code = confirmService.generateCode(user, EmailRequestType.ACTIVATE);
-        emailService.sendVerificationEmail(user.getEmail(), code);
+        EmailRequest emailRequest = emailRequestService.generateCode(user, EmailRequestType.ACTIVATE);
+        try {
+            emailService.sendEmail(emailRequest);
+        } catch (MessagingException e) {
+            log.error("Nothing was sent {}", e.getCause().getMessage());
+        }
         return savedUser;
     }
 

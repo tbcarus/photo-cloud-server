@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:th="http://www.thymeleaf.org">
+<!--@thymesVar id="user" type="ru.tbcarus.spendingsb.model.User"-->
+<!--@thymesVar id="emailAction" type="ru.tbcarus.spendingsb.model.EmailAction"-->
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${emailAction.getType().title}"></title>
+<!--    <div th:replace="~{fragments/headTag :: headTag}"></div>-->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css"
+          rel="stylesheet"
+          integrity="sha384-4bw+/aepP/YC94hEpVNVgiZdgIC5+VKNBQNGCHeKRQN+PtmoHDEXuppvnDJzQIu9"
+          crossorigin="anonymous">
+    <link rel="stylesheet" th:href="@{css/style.css}">
+</head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-HwwvtgBNo3bZJJLYd8oVXjrBZt8cqVSpeBNS5n7C8IVInixGAoxmnlMuBnhbgrkm"
+        crossorigin="anonymous"></script>
+<table border="0" align="center" width="100%" cellspacing="0" cellpadding="0">
+    <tbody>
+    <tr>
+        <td>
+            <table align="center" width="50%" cellspacing="0" cellpadding="0">
+                <tbody>
+                <tr>
+                    <td align="right" style="color: #ffffff; background-color: #538792">
+                        <h1>Spending web App&nbsp;</h1>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <p>
+                            Добрый день, <span th:text="${name}">N_A_M_E</span>!
+                        </p>
+                        <p>
+                            Вы зарегистрировались в приложении для записи своих трат.
+                            Для активации аккаунта в приложении необходимо подтвердить свою почту, пройдя по ссылке
+                        </p>
+                        <p>
+                            <span th:text="${link}"></span>
+                        </p>
+                        <p>
+                            В случае возникновения сложностей, замечаний или предложений, пожалуйста, напишите по почте
+                            <a href="mailto:spending-sb@yandex.ru">spending-sb@yandex.ru</a>.
+                        </p>
+                    </td>
+                </tr>
+                <tr>
+                    <td bgcolor="#ff931c" align="center" style="color: #538792">
+                        <div th:replace="~{fragments/footer :: copy}"></div>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </td>
+    </tr>
+    </tbody>
+</table>
+
+</body>
+</html>

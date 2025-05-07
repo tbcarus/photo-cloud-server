@@ -15,12 +15,12 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-public class ConfirmService {
+public class EmailRequestService {
 
     UserRepository userRepository;
     EmailRequestRepository emailRequestRepository;
 
-    public String generateCode(User user, EmailRequestType type) {
+    public EmailRequest generateCode(User user, EmailRequestType type) {
         String code = UUID.randomUUID().toString();
         EmailRequest verificationToken = EmailRequest.builder()
                 .code(code)
@@ -28,11 +28,10 @@ public class ConfirmService {
                 .used(false)
                 .user(user)
                 .build();
-        emailRequestRepository.save(verificationToken);
-        return code;
+        return emailRequestRepository.save(verificationToken);
     }
 
-    public String checkAndGenerateCode(User user, EmailRequestType type) {
+    public EmailRequest checkAndGenerateCode(User user, EmailRequestType type) {
         int tokensCount = emailRequestRepository.countByUserAndTypeAndCreateDateAfter(user, type, LocalDateTime.now().minusDays(3));
 
         if (tokensCount >= 3) {

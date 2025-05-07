@@ -8,7 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import ru.tbcarus.photocloudserver.service.ConfirmService;
+import ru.tbcarus.photocloudserver.service.EmailRequestService;
 import ru.tbcarus.photocloudserver.service.UserService;
 
 @RestController
@@ -21,12 +21,12 @@ public class ConfirmController {
     public static final String RESET_PASSWORD_URL = "/api/auth/reset-password";
 
     private final UserService userService;
-    private final ConfirmService confirmService;
+    private final EmailRequestService emailRequestService;
 
     @Operation(summary = "Confirm user registration")
     @GetMapping(CONFIRM_EMAIL_URL)
     public ResponseEntity<String> verifyEmail(@RequestParam String email, @RequestParam String code) {
-        confirmService.ConfirmEmail(email, code);
+        emailRequestService.ConfirmEmail(email, code);
         return ResponseEntity.status(HttpStatus.OK).body(String.format("User %s was verified", "dsd"));
     }
 }

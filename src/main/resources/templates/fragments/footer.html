@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+
+<div th:fragment="copy">
+    <br>
+  <div class="row">
+    <div class="col-md-12 d-flex justify-content-center">
+            <span th:text="'=' + ${T(ru.tbcarus.spendingsb.util.DateUtil)
+                .getLocalDateTimeNow()
+                .format(T(ru.tbcarus.spendingsb.util.DateUtil).DTFORMATTER_RU)} + '= by tbcarus&nbsp;'">
+            </span>
+<!--        <a th:href = "@{/info}">info</a>-->
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
