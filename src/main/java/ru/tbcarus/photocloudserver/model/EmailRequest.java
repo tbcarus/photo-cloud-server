@@ -42,12 +42,6 @@ public class EmailRequest {
     @Column(updatable = false)
     private LocalDateTime createDate;
 
-    public EmailRequest(EmailRequestType type) {
-        this.type = type;
-        this.createDate = LocalDateTime.now();
-        this.used = false;
-    }
-
     public boolean isActive() {
         return createDate.plusDays(DEFAULT_EXPIRED_DAYS).isAfter(LocalDateTime.now());
     }

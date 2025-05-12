@@ -14,7 +14,7 @@ import java.util.Properties;
 @Configuration
 public class MailConfig {
 
-    public static final String userName = "spending-sb";
+    public static final String userName = "my-cld";
     public static final String MAIL_FROM = userName + "@yandex.ru"; //tbcarus@yandex.ru spending-sb@yandex.ru FidelAC26@yandex.ru
 
     @Bean
@@ -41,7 +41,7 @@ public class MailConfig {
         mailSender.setPort(465);
 
         mailSender.setUsername(userName); //tbcarus spending-sb
-        mailSender.setPassword("adscmnrrdgojdgip"); //hpjsguumudneendo adscmnrrdgojdgip
+        mailSender.setPassword("tholdcgzqljpxzfs"); //hpjsguumudneendo adscmnrrdgojdgip
 
         Properties props = mailSender.getJavaMailProperties();
         props.put("mail.transport.protocol", "smtp");

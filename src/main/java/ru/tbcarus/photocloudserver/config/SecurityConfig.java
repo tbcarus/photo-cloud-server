@@ -26,6 +26,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests((requests) -> requests
                         .requestMatchers(RootController.TEST_URL, RegisterController.REGISTER_URL,
                                 RegisterController.LOGIN_URL, RegisterController.REFRESH_TOKEN_URL,
+                                "/api/auth",
                                 "/swagger-ui/**", "/swagger-resources/*", "/v3/api-docs/**").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

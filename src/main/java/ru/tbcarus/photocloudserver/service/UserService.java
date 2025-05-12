@@ -38,8 +38,10 @@ public class UserService implements UserDetailsService {
         user.setRoles(Set.of(Role.USER));
         user.setEmail(user.getEmail().toLowerCase());
         user.setPassword(passwordEncoder.encode(user.getPassword()));
+        user.setBanned(false);
+        user.setEnabled(false);
         User savedUser = userRepository.save(user);
-        EmailRequest emailRequest = emailRequestService.generateCode(user, EmailRequestType.ACTIVATE);
+        EmailRequest emailRequest = emailRequestService.generateEmailRequest(user, EmailRequestType.ACTIVATE);
         try {
             emailService.sendEmail(emailRequest);
         } catch (MessagingException e) {

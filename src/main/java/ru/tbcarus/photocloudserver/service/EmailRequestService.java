@@ -20,15 +20,15 @@ public class EmailRequestService {
     UserRepository userRepository;
     EmailRequestRepository emailRequestRepository;
 
-    public EmailRequest generateCode(User user, EmailRequestType type) {
-        String code = UUID.randomUUID().toString();
-        EmailRequest verificationToken = EmailRequest.builder()
-                .code(code)
+    public EmailRequest generateEmailRequest(User user, EmailRequestType type) {
+        EmailRequest emailRequest = EmailRequest.builder()
+                .code(UUID.randomUUID().toString())
                 .type(type)
                 .used(false)
                 .user(user)
                 .build();
-        return emailRequestRepository.save(verificationToken);
+        EmailRequest save = emailRequestRepository.save(emailRequest);
+        return save;
     }
 
     public EmailRequest checkAndGenerateCode(User user, EmailRequestType type) {
@@ -37,7 +37,7 @@ public class EmailRequestService {
         if (tokensCount >= 3) {
             throw new BadRegistrationRequest(ErrorType.TOO_MUCH_REPEAT_REQUESTS);
         }
-        return generateCode(user, type);
+        return generateEmailRequest(user, type);
     }
 
     public void ConfirmEmail(String email, String code) {

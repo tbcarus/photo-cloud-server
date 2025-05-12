@@ -1,5 +1,6 @@
 package ru.tbcarus.photocloudserver.model;
 
+import lombok.Builder;
 import lombok.Data;
 
 import java.util.Map;
