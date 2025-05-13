@@ -1,0 +1,78 @@
+body {
+    font-family: 'Verdana';
+    font-size: 9pt;
+}
+
+span {
+    color: black;
+}
+
+.inactive {
+    color: #cccccc;
+}
+.active {
+    color: #000000;
+}
+.banned {
+    color: #e75b5b;
+}
+
+.table-input > td {
+    background-color: #ddffdd;
+}
+
+.btn-top {
+    background: #8bc34a;
+    color: black;
+    border: 0;
+    font-family: 'Verdana';
+    font-size: 9pt;
+}
+
+.btn-top:hover, .btn-top:focus, .btn-top:active, .btn-top.active, .open>.dropdown-toggle.btn-top {
+    color: black;
+    background-color: #ffc107;
+    border: 0;
+}
+
+.btn-payment {
+    background: var(--pay-color, #ffc107);
+    color: black;
+    border: 0;
+    font-family: 'Verdana';
+    font-size: 9pt;
+}
+
+.btn-payment:hover, .btn-payment:focus, .btn-payment:active, .btn-payment.active, .open>.dropdown-toggle.btn-payment {
+    color: black;
+    background-color: #8bc34a;
+    border: 0;
+}
+
+.btn-bottom {
+    background: #87ceeb;
+    color: black;
+    border: 0;
+    font-family: 'Verdana';
+    font-size: 9pt;
+}
+
+.btn-bottom:hover, .btn-bottom:focus, .btn-bottom:active, .btn-bottom.active, .open>.dropdown-toggle.btn-bottom {
+    color: black;
+    background-color: #8bc34a;
+    border: 0;
+}
+
+.btn-del {
+    background: #f44336;
+    color: white;
+    border: 0;
+    font-family: 'Verdana';
+    font-size: 9pt;
+}
+
+.btn-del:hover, .btn-del:focus, .btn-del:active, .btn-del.active, .open>.dropdown-toggle.btn-del {
+    color: white;
+    background-color: #673ab7;
+    border: 0;
+}

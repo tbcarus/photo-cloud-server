@@ -28,9 +28,9 @@ public class RegisterController {
 
     @Operation(summary = "User registration")
     @PostMapping(REGISTER_URL)
-    public ResponseEntity<Void> register(@Validated @RequestBody RegisterRequest registerRequest) {
+    public ResponseEntity<String> register(@Validated @RequestBody RegisterRequest registerRequest) {
         User savedUser = userService.register(registerRequest);
-        return ResponseEntity.status(HttpStatus.CREATED).build();
+        return ResponseEntity.status(HttpStatus.CREATED).body("Email was sent");
     }
 
     @Operation(summary = "User authentication")

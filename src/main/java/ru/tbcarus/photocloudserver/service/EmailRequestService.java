@@ -17,8 +17,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class EmailRequestService {
 
-    UserRepository userRepository;
-    EmailRequestRepository emailRequestRepository;
+    private final UserRepository userRepository;
+    private final EmailRequestRepository emailRequestRepository;
 
     public EmailRequest generateEmailRequest(User user, EmailRequestType type) {
         EmailRequest emailRequest = EmailRequest.builder()

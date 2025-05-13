@@ -34,7 +34,7 @@ public class EmailContextUtil {
 
         Map<String, Object> map = new HashMap<>();
         map.put("name", emailRequest.getUser().getFirstName());
-        map.put("emailAction", emailRequest);
+        map.put("emailRequest", emailRequest);
         ServletRequestAttributes servletRequestAttributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         HttpServletRequest request = Objects.requireNonNull(servletRequestAttributes).getRequest();
         StringBuilder urlBuilder = new StringBuilder();

@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml"
       xmlns:th="http://www.thymeleaf.org">
-<!--@thymesVar id="user" type="ru.tbcarus.spendingsb.model.User"-->
-<!--@thymesVar id="emailAction" type="ru.tbcarus.spendingsb.model.EmailAction"-->
+<!--@thymesVar id="user" type="ru.tbcarus.photocloudserver.model.User"-->
+<!--@thymesVar id="emailRequest" type="ru.tbcarus.photocloudserver.model.EmailRequest"-->
 <head>
 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title th:text="${emailAction.getType().title}"></title>
+    <title th:text="${emailRequest.getType().title}"></title>
 <!--    <div th:replace="~{fragments/headTag :: headTag}"></div>-->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.1/dist/css/bootstrap.min.css"
           rel="stylesheet"
@@ -27,7 +27,7 @@
                 <tbody>
                 <tr>
                     <td align="right" style="color: #ffffff; background-color: #538792">
-                        <h1>Spending web App&nbsp;</h1>
+                        <h1>Photo-cloud web App&nbsp;</h1>
                     </td>
                 </tr>
                 <tr>
@@ -36,7 +36,7 @@
                             Добрый день, <span th:text="${name}">N_A_M_E</span>!
                         </p>
                         <p>
-                            Вы зарегистрировались в приложении для записи своих трат.
+                            Вы зарегистрировались в пет-приложении для автоматического сохранения фотографий с телефона.
                             Для активации аккаунта в приложении необходимо подтвердить свою почту, пройдя по ссылке
                         </p>
                         <p>
@@ -44,7 +44,7 @@
                         </p>
                         <p>
                             В случае возникновения сложностей, замечаний или предложений, пожалуйста, напишите по почте
-                            <a href="mailto:spending-sb@yandex.ru">spending-sb@yandex.ru</a>.
+                            <a href="mailto:my-cld@yandex.ru">my-cld@yandex.ru</a>.
                         </p>
                     </td>
                 </tr>
