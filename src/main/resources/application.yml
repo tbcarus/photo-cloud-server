@@ -17,6 +17,25 @@ spring:
   thymeleaf:
     prefix: classpath:/templates/
     suffix: .html
+#  mail:
+#    host: smtp.yandex.ru
+#    port: 465
+#    username: ${SMTP_USERNAME}
+#    password: ${SMTP_PASSWORD}
+#    properties:
+#      mail:
+#        smtp:
+#          auth: true
+#          starttls:
+#            enable: true
+#          ssl:
+#            enable: true
+#        debug: true
+#      default-encoding: UTF-8
+
+for-mailing:
+  smtp:
+    pass: ${SMTP_PASSWORD}
 
 server:
   servlet:

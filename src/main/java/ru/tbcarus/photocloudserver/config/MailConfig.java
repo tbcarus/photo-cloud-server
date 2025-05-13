@@ -1,5 +1,6 @@
 package ru.tbcarus.photocloudserver.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -15,7 +16,10 @@ import java.util.Properties;
 public class MailConfig {
 
     public static final String userName = "my-cld";
-    public static final String MAIL_FROM = userName + "@yandex.ru"; //tbcarus@yandex.ru spending-sb@yandex.ru FidelAC26@yandex.ru
+    public static final String MAIL_FROM = userName + "@yandex.ru";
+
+    @Value("${for-mailing.smtp.pass}")
+    private String password;
 
     @Bean
     public SpringTemplateEngine springTemplateEngine() {
@@ -40,8 +44,8 @@ public class MailConfig {
         mailSender.setHost("smtp.yandex.ru");
         mailSender.setPort(465);
 
-        mailSender.setUsername(userName); //tbcarus spending-sb
-        mailSender.setPassword("tholdcgzqljpxzfs"); //hpjsguumudneendo adscmnrrdgojdgip
+        mailSender.setUsername(userName);
+        mailSender.setPassword(password);
 
         Properties props = mailSender.getJavaMailProperties();
         props.put("mail.transport.protocol", "smtp");
