@@ -1,5 +1,6 @@
 package ru.tbcarus.photocloudserver.service;
 
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import ru.tbcarus.photocloudserver.exception.BadRegistrationRequest;
@@ -11,6 +12,7 @@ import ru.tbcarus.photocloudserver.repository.EmailRequestRepository;
 import ru.tbcarus.photocloudserver.repository.UserRepository;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -40,12 +42,17 @@ public class EmailRequestService {
         return generateEmailRequest(user, type);
     }
 
+    @Transactional
     public void ConfirmEmail(String email, String code) {
-//        EmailRequest verificationToken = verificationTokenService.validateToken(token, TokenType.EMAIL_VERIFICATION);
-//        User user = verificationToken.getUser();
-//        user.setEnabled(true);
-//        userRepository.save(user);
-//        verificationTokenService.delete(verificationToken);
+        Optional<EmailRequest> optER = emailRequestRepository.findByCode(code);
+        EmailRequest emailRequest = optER.orElseThrow(() -> new BadRegistrationRequest(ErrorType.NOT_FOUND));
+        if (emailRequest.isUsed()) {
+            throw new BadRegistrationRequest(ErrorType.NOT_FOUND);
+        }
+        Optional<User> optU = userRepository.findByEmailIgnoreCase(email);
+        User user = optU.orElseThrow(() -> new BadRegistrationRequest(ErrorType.NOT_FOUND));
+        emailRequest.setUsed(true);
+        user.setEnabled(true);
     }
 
     public void delete(EmailRequest emailRequest) {

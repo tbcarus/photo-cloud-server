@@ -24,9 +24,9 @@ public class ConfirmController {
     private final EmailRequestService emailRequestService;
 
     @Operation(summary = "Confirm user registration")
-    @GetMapping(CONFIRM_EMAIL_URL)
+    @GetMapping("/register/ACTIVATE")
     public ResponseEntity<String> verifyEmail(@RequestParam String email, @RequestParam String code) {
         emailRequestService.ConfirmEmail(email, code);
-        return ResponseEntity.status(HttpStatus.OK).body(String.format("User %s was verified", "dsd"));
+        return ResponseEntity.status(HttpStatus.OK).body(String.format("User %s was verified", email));
     }
 }
