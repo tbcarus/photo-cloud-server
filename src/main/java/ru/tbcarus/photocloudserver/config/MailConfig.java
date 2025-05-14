@@ -14,12 +14,16 @@ import java.util.Properties;
 
 @Configuration
 public class MailConfig {
-
-    public static final String userName = "my-cld";
-    public static final String MAIL_FROM = userName + "@yandex.ru";
-
-    @Value("${for-mailing.smtp.pass}")
+    @Value("${spring.mail.username}")
+    public  String userName;
+    @Value("${spring.mail.mail-from}")
+    private String mailFrom;
+    @Value("${spring.mail.password}")
     private String password;
+    @Value("${spring.mail.host}")
+    private String host;
+    @Value("${spring.mail.port}")
+    private Integer port;
 
     @Bean
     public SpringTemplateEngine springTemplateEngine() {
@@ -41,9 +45,8 @@ public class MailConfig {
     @Bean
     public JavaMailSender getJavaMailSender() {
         JavaMailSenderImpl mailSender = new JavaMailSenderImpl();
-        mailSender.setHost("smtp.yandex.ru");
-        mailSender.setPort(465);
-
+        mailSender.setHost(host);
+        mailSender.setPort(port);
         mailSender.setUsername(userName);
         mailSender.setPassword(password);
 

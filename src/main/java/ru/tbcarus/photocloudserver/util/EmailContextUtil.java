@@ -3,7 +3,6 @@ package ru.tbcarus.photocloudserver.util;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
-import ru.tbcarus.photocloudserver.config.MailConfig;
 import ru.tbcarus.photocloudserver.model.EmailContext;
 import ru.tbcarus.photocloudserver.model.EmailRequest;
 import ru.tbcarus.photocloudserver.model.EmailRequestType;
@@ -19,7 +18,6 @@ public class EmailContextUtil {
 
     public static EmailContext getEmailContext(EmailRequest emailRequest) {
         EmailContext email = new EmailContext();
-        email.setFrom(MailConfig.MAIL_FROM);
         email.setTo(emailRequest.getUser().getEmail());
         email.setSubject(emailRequest.getType().getTitle());
         email.setFromDisplayName("FROM_DISPLAY_NAME");
