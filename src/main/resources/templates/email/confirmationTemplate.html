@@ -44,7 +44,7 @@
                         </p>
                         <p>
                             В случае возникновения сложностей, замечаний или предложений, пожалуйста, напишите по почте
-                            <a href="mailto:my-cld@yandex.ru">my-cld@yandex.ru</a>.
+                            <a th:href="'mailto:' + ${mailTo}" th:text="${mailTo}">${mailTo}</a>.
                         </p>
                     </td>
                 </tr>
