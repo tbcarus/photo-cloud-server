@@ -25,4 +25,5 @@ public class RefreshToken {
     private String userName;
     private LocalDateTime expires;
     private boolean revoked;
+    private LocalDateTime revokedAt;
 }

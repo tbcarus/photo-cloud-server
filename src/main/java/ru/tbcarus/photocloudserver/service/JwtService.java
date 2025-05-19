@@ -15,12 +15,10 @@ import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.repository.RefreshTokenRepository;
 
 import java.security.Key;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Optional;
 import java.util.function.Function;
 
 @Service
@@ -31,7 +29,7 @@ public class JwtService {
     @Value("${token.signing.key}")
     private String jwtSigningKey;
 
-    private final long expirationTime = 60 * 1000;
+    private final long expirationTime = 5 * 60 * 1000;
     private final long refreshExpirationTime = 7 * 24 * 60 * 60 * 1000;
 
     private Map<String, Object> generateClaims(User user) {
@@ -50,10 +48,10 @@ public class JwtService {
     }
 
     public String generateRefreshToken(User user) {
-        Optional<RefreshToken> refreshTokenFromDB = refreshTokenRepository.findByUserNameAndRevokedAndExpiresAfter(user.getUsername(), false, LocalDateTime.now());
-        if (refreshTokenFromDB.isPresent()) {
-            return refreshTokenFromDB.get().getToken();
-        }
+//        Optional<RefreshToken> refreshTokenFromDB = refreshTokenRepository.findByUserNameAndRevokedAndExpiresAfter(user.getUsername(), false, LocalDateTime.now());
+//        if (refreshTokenFromDB.isPresent()) {
+//            return refreshTokenFromDB.get().getToken();
+//        }
         String refreshToken = Jwts.builder()
                 .claims(generateClaims(user))
                 .issuedAt(new Date(System.currentTimeMillis()))
