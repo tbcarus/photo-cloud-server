@@ -15,10 +15,12 @@ import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.repository.RefreshTokenRepository;
 
 import java.security.Key;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 
 @Service
@@ -67,6 +69,14 @@ public class JwtService {
         return refreshToken;
     }
 
+    public void revoke(String token) {
+        Optional<RefreshToken> opt = refreshTokenRepository.findByToken(token);
+        RefreshToken refreshToken = opt.orElseThrow(() -> new EntityNotFoundException(token, String.format("Token %s not found", token)));
+        refreshToken.setRevoked(true);
+        refreshToken.setRevokedAt(LocalDateTime.now());
+        refreshTokenRepository.save(refreshToken);
+    }
+
     public String refreshAccessToken(User user, RefreshToken tokenDb) {
         if (tokenDb.isRevoked()) {
             throw new TokenRevokedException(tokenDb.getToken(), "token revoked");
@@ -108,4 +118,5 @@ public class JwtService {
         return refreshTokenRepository.findByToken(token).orElseThrow(() ->
                 new EntityNotFoundException(token, String.format("Token %s not found", token)));
     }
+
 }
