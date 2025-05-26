@@ -17,10 +17,7 @@ import ru.tbcarus.photocloudserver.repository.RefreshTokenRepository;
 import java.security.Key;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.function.Function;
 
 @Service
@@ -77,6 +74,26 @@ public class JwtService {
         refreshTokenRepository.save(refreshToken);
     }
 
+    public void revokeAll(User user) {
+        List<RefreshToken> list = refreshTokenRepository.findAllByUserNameAndRevoked(user.getUsername(), false);
+        if (!list.isEmpty()) {
+            revokeList(list);
+        }
+    }
+
+    public void revokeOther(String token, User user) {
+        List<RefreshToken> allList = refreshTokenRepository.findAllByUserNameAndRevoked(user.getUsername(), false);
+        List<RefreshToken> list = allList.stream().filter(t -> !t.getToken().equals(token)).toList();
+        if (!list.isEmpty()) {
+            revokeList(list);
+        }
+    }
+
+    private void revokeList(List<RefreshToken> list) {
+        list.forEach(t -> t.setRevoked(true));
+        refreshTokenRepository.saveAll(list);
+    }
+
     public String refreshAccessToken(User user, RefreshToken tokenDb) {
         if (tokenDb.isRevoked()) {
             throw new TokenRevokedException(tokenDb.getToken(), "token revoked");
@@ -118,5 +135,4 @@ public class JwtService {
         return refreshTokenRepository.findByToken(token).orElseThrow(() ->
                 new EntityNotFoundException(token, String.format("Token %s not found", token)));
     }
-
 }

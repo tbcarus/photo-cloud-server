@@ -69,6 +69,14 @@ public class UserService implements UserDetailsService {
         jwtService.revoke(logoutRequest.refreshToken());
     }
 
+    public void logoutAll(User user) {
+        jwtService.revokeAll(user);
+    }
+
+    public void logoutOther(LogoutRequest logoutRequest, User user) {
+        jwtService.revokeOther(logoutRequest.refreshToken(), user);
+    }
+
     public RefreshResponse refreshToken(String refreshToken) {
         RefreshToken tokenDb = jwtService.getRefreshToken(refreshToken);
         String email = tokenDb.getUserName();
