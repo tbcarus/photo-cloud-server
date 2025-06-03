@@ -50,6 +50,21 @@ public class UserService implements UserDetailsService {
         return savedUser;
     }
 
+    public void forgotPassword (String email) {
+        User user = userRepository.findByEmailIgnoreCase(email).orElseThrow(() ->
+                new EntityNotFoundException(email, String.format("User %s not found", email)));
+        EmailRequest emailRequest = emailRequestService.generateEmailRequest(user, EmailRequestType.PASSWORD_RESET);
+        try {
+            emailService.sendEmail(emailRequest);
+        } catch (MessagingException e) {
+            log.error("Nothing was sent {}", e.getCause().getMessage());
+        }
+    }
+
+    public void resetPassword (String email, String code) {
+        emailRequestService.resetPassword(email, code);
+    }
+
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         return userRepository.findByEmailIgnoreCase(username).get();

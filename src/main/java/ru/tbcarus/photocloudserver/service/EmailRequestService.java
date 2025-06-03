@@ -2,6 +2,7 @@ package ru.tbcarus.photocloudserver.service;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import ru.tbcarus.photocloudserver.exception.BadRegistrationRequest;
 import ru.tbcarus.photocloudserver.exception.ErrorType;
@@ -21,6 +22,7 @@ public class EmailRequestService {
 
     private final UserRepository userRepository;
     private final EmailRequestRepository emailRequestRepository;
+    private final PasswordEncoder passwordEncoder;
 
     public EmailRequest generateEmailRequest(User user, EmailRequestType type) {
         EmailRequest emailRequest = EmailRequest.builder()
@@ -43,20 +45,36 @@ public class EmailRequestService {
     }
 
     @Transactional
-    public void ConfirmEmail(String email, String code) {
-        Optional<EmailRequest> optER = emailRequestRepository.findByCode(code);
-        EmailRequest emailRequest = optER.orElseThrow(() -> new BadRegistrationRequest(ErrorType.NOT_FOUND));
-        if (emailRequest.isUsed()) {
-            throw new BadRegistrationRequest(ErrorType.NOT_FOUND);
-        }
+    public void confirmEmail(String email, String code) {
+        EmailRequest emailRequest = getEmailRequestByCode(code);
+        checkEmailRequest(emailRequest, EmailRequestType.ACTIVATE);
         Optional<User> optU = userRepository.findByEmailIgnoreCase(email);
         User user = optU.orElseThrow(() -> new BadRegistrationRequest(ErrorType.NOT_FOUND));
         emailRequest.setUsed(true);
         user.setEnabled(true);
     }
 
+    @Transactional
+    public void resetPassword(String password, String code) {
+        EmailRequest emailRequest = getEmailRequestByCode(code);
+        checkEmailRequest(emailRequest, EmailRequestType.PASSWORD_RESET);
+        User user = userRepository.findById(emailRequest.getUser().getId()).get();
+        user.setPassword(passwordEncoder.encode(password));
+        emailRequest.setUsed(true);
+    }
+
     public void delete(EmailRequest emailRequest) {
 
     }
 
+    public EmailRequest getEmailRequestByCode(String code) {
+        return emailRequestRepository.findByCode(code)
+                .orElseThrow(() -> new BadRegistrationRequest(ErrorType.NOT_FOUND));
+    }
+
+    public void checkEmailRequest(EmailRequest emailRequest, EmailRequestType type) {
+        if (emailRequest.isUsed() || emailRequest.getType() != type) {
+            throw new BadRegistrationRequest(ErrorType.NOT_FOUND);
+        }
+    }
 }

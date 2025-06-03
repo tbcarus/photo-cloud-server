@@ -70,6 +70,20 @@ public class RegisterController {
         return ResponseEntity.status(HttpStatus.OK).body(userService.refreshToken(refreshRequest.refreshToken()));
     }
 
+    @Operation(summary = "Forgot password request")
+    @PostMapping(FORGOT_PASSWORD_URL)
+    public ResponseEntity<String> forgotPassword(@RequestParam String email) {
+        userService.forgotPassword(email);
+        return ResponseEntity.status(HttpStatus.CREATED).body("Email was sent");
+    }
+
+    @Operation(summary = "Reset password")
+    @PostMapping(RESET_PASSWORD_URL)
+    public ResponseEntity<String> resetPassword(@RequestParam String password, @RequestParam String code) {
+
+        return ResponseEntity.status(HttpStatus.OK).body("Password was reset");
+    }
+
     @GetMapping(USER_URL+"/test")
     public ResponseEntity<String> test() {
         return ResponseEntity.status(HttpStatus.OK).body("All good!");
