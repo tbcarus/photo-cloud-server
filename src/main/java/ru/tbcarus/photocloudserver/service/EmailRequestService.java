@@ -11,8 +11,10 @@ import ru.tbcarus.photocloudserver.model.EmailRequestType;
 import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.repository.EmailRequestRepository;
 import ru.tbcarus.photocloudserver.repository.UserRepository;
+import ru.tbcarus.photocloudserver.util.ConfigUtil;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -61,6 +63,12 @@ public class EmailRequestService {
         User user = userRepository.findById(emailRequest.getUser().getId()).get();
         user.setPassword(passwordEncoder.encode(password));
         emailRequest.setUsed(true);
+        List<EmailRequest> list = emailRequestRepository.findAllByUserIdAndCreateDateBetweenAndTypeOrderByCreateDateDesc(
+                user.getId(),
+                LocalDateTime.now().minusDays(ConfigUtil.DEFAULT_EXPIRED_DAYS),
+                LocalDateTime.now(),
+                EmailRequestType.PASSWORD_RESET);
+        list.forEach(er -> er.setUsed(true));
     }
 
     public void delete(EmailRequest emailRequest) {
@@ -73,7 +81,7 @@ public class EmailRequestService {
     }
 
     public void checkEmailRequest(EmailRequest emailRequest, EmailRequestType type) {
-        if (emailRequest.isUsed() || emailRequest.getType() != type) {
+        if (emailRequest.isUsed() || emailRequest.getType() != type || emailRequest.isExpired()) {
             throw new BadRegistrationRequest(ErrorType.NOT_FOUND);
         }
     }

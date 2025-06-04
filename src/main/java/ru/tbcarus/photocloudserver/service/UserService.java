@@ -61,8 +61,8 @@ public class UserService implements UserDetailsService {
         }
     }
 
-    public void resetPassword (String email, String code) {
-        emailRequestService.resetPassword(email, code);
+    public void resetPassword (String password, String code) {
+        emailRequestService.resetPassword(password, code);
     }
 
     @Override
