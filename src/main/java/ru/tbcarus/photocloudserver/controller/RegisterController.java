@@ -80,7 +80,7 @@ public class RegisterController {
     @Operation(summary = "Reset password")
     @PostMapping(RESET_PASSWORD_URL)
     public ResponseEntity<String> resetPassword(@RequestParam String password, @RequestParam String code) {
-
+        userService.resetPassword(password, code);
         return ResponseEntity.status(HttpStatus.OK).body("Password was reset");
     }
 
