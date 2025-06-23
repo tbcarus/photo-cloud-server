@@ -33,6 +33,9 @@ token:
   signing:
     key: ${JWT_KEY}
 
+storage:
+  baseStoragePath: /storage # базовый путь хранения файлов
+
 logging:
   level:
     liquibase: info

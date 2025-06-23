@@ -1,0 +1,69 @@
+package ru.tbcarus.photocloudserver.service;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FilenameUtils;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+import ru.tbcarus.photocloudserver.model.MediaFile;
+import ru.tbcarus.photocloudserver.model.MediaType;
+import ru.tbcarus.photocloudserver.model.User;
+import ru.tbcarus.photocloudserver.model.dto.MediaFileDto;
+import ru.tbcarus.photocloudserver.model.dto.mapper.MediaFileMapper;
+import ru.tbcarus.photocloudserver.repository.MediaFileRepository;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class MediaFileService {
+
+    private final MediaFileRepository mediaFileRepository;
+    private final MediaFileMapper mediaFileMapper;
+
+    @Value("${storage.baseStoragePath}")
+    private String baseStoragePath;
+
+    public MediaFileDto uploadFile(MultipartFile file, User user) throws IOException {
+        if (file.isEmpty()) {
+            throw new IllegalArgumentException("Файл пустой");
+        }
+
+        String mimeType = file.getContentType();
+        if (mimeType == null) {
+            throw new IllegalArgumentException("MIME-тип не определён");
+        }
+
+        String originalFilename = file.getOriginalFilename();
+        String extension = FilenameUtils.getExtension(originalFilename);
+        String storageFilename = UUID.randomUUID() + "." + extension;
+
+        Path userDir = Paths.get(baseStoragePath, user.getId().toString());
+        Files.createDirectories(userDir);
+
+        Path destination = userDir.resolve(storageFilename);
+        try (InputStream in = file.getInputStream()) {
+            Files.copy(in, destination, StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        MediaFile mediaFile = MediaFile.builder()
+                .originalFilename(originalFilename)
+                .storageFilename(storageFilename)
+                .mimeType(mimeType)
+                .size(file.getSize())
+                .type(MediaType.fromMimeType(mimeType))
+                .user(user)
+                .build();
+
+        return mediaFileMapper.toDto(mediaFileRepository.save(mediaFile));
+    }
+
+}
