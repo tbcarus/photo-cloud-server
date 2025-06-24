@@ -34,7 +34,7 @@ token:
     key: ${JWT_KEY}
 
 storage:
-  baseStoragePath: /storage # базовый путь хранения файлов
+  baseStoragePath: storage # базовый путь хранения файлов
 
 logging:
   level:

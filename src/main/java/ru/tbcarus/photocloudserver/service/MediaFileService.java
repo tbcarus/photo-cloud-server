@@ -52,6 +52,7 @@ public class MediaFileService {
         Path destination = userDir.resolve(storageFilename);
         try (InputStream in = file.getInputStream()) {
             Files.copy(in, destination, StandardCopyOption.REPLACE_EXISTING);
+            log.info("File saved: {}", destination.toAbsolutePath());
         }
 
         MediaFile mediaFile = MediaFile.builder()
