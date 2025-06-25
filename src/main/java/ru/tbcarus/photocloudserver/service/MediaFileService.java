@@ -4,6 +4,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FilenameUtils;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import ru.tbcarus.photocloudserver.model.MediaFile;
@@ -65,6 +67,10 @@ public class MediaFileService {
                 .build();
 
         return mediaFileMapper.toDto(mediaFileRepository.save(mediaFile));
+    }
+
+    public Page<MediaFileDto> getUserFiles(Pageable pageable, User user) {
+        return mediaFileRepository.findAllByUserId(user.getId().longValue(), pageable).map(mediaFileMapper::toDto);
     }
 
 }

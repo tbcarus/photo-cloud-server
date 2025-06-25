@@ -2,8 +2,13 @@ package ru.tbcarus.photocloudserver.controller;
 
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,7 +24,7 @@ import java.io.IOException;
 @Tag(name = "Media files processing")
 public class MediaFileController {
     public static final String UPLOAD_URL = "/api/v1/photos/upload"; // загрузка файлов
-    public static final String PHOTOS_URL = "/api/v1/photos"; // список фото (пагинация + фильтры)
+    public static final String PHOTOS_URL = "/api/v1/files"; // список фото (пагинация + фильтры)
     public static final String PHOTO_URL = "/api/v1/photos/{id}"; // метаданные фото
     public static final String PHOTO_THUMBNAIL_URL = "/api/v1/photos/{id}/thumbnail"; // миниатюра (кэшировать!).
     public static final String DOWNLOAD_URL = "/api/v1/photos/{id}/download"; // скачивание оригинала
@@ -37,5 +42,13 @@ public class MediaFileController {
         return ResponseEntity.ok(uploaded);
     }
 
+    @GetMapping(PHOTOS_URL)
+    public Page<MediaFileDto> getUserFiles(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @AuthenticationPrincipal User user) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        return mediaFileService.getUserFiles(pageable, user);
+    }
 
 }
