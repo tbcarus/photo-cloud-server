@@ -47,6 +47,17 @@ public class GlobalExceptionHandler {
                 );
     }
 
+    @ExceptionHandler(FileNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleFileNotFound(EntityNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(
+                        ErrorResponse.builder()
+                                .uuid(UUID.randomUUID())
+                                .message(e.getMessage())
+                                .build()
+                );
+    }
+
     @ExceptionHandler(TickerRequestException.class)
     public ResponseEntity<ErrorResponse> handleTickerRequestException(TickerRequestException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
