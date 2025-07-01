@@ -24,7 +24,7 @@ public class EmailRequest {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Integer id;
+    private Long id;
 
     private String code; // код
 
@@ -40,10 +40,10 @@ public class EmailRequest {
 
     @CreationTimestamp
     @Column(updatable = false)
-    private LocalDateTime createDate;
+    private LocalDateTime createdAt;
 
     public boolean isActive() {
-        return createDate.plusDays(DEFAULT_EXPIRED_DAYS).isAfter(LocalDateTime.now());
+        return createdAt.plusDays(DEFAULT_EXPIRED_DAYS).isAfter(LocalDateTime.now());
     }
 
     public boolean isExpired() {

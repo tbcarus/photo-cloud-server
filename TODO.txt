@@ -19,8 +19,8 @@
 13. Удаление пользователя
 14. Тесты
 15. Шаблоны писем сделать как в NC, VC и т.д. (прикольное окошко на запрос куки на www.jetbrains.com)
-16. Все Id сделать Long. И лучше вынести в какой-нибудь AbstractBaseEntity?
-17. createDate -> createdAt в EmailRequest (в ликвибейс, мапстракте и т. д.)
++16. Все Id сделать Long. И лучше вынести в какой-нибудь AbstractBaseEntity?
++17. createDate -> createdAt в EmailRequest (в ликвибейс, мапстракте и т. д.)
 
 
 

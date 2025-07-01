@@ -15,14 +15,14 @@ public interface EmailRequestRepository extends JpaRepository<EmailRequest, Inte
 
     EmailRequest getByCode(String code);
 
-    EmailRequest getByUserIdAndCode(Integer user_id, String code);
+    EmailRequest getByUserIdAndCode(Long user_id, String code);
 
     Optional<EmailRequest> findByCode(String code);
 
-    List<EmailRequest> findAllByUserIdAndCreateDateBetweenAndTypeOrderByCreateDateDesc(Integer userId,
-                                                                                   LocalDateTime after,
-                                                                                   LocalDateTime before,
-                                                                                   EmailRequestType type);
+    List<EmailRequest> findAllByUserIdAndCreatedAtBetweenAndTypeOrderByCreatedAtDesc(Long userId,
+                                                                                     LocalDateTime after,
+                                                                                     LocalDateTime before,
+                                                                                     EmailRequestType type);
 
-    int countByUserAndTypeAndCreateDateAfter(User user, EmailRequestType type, LocalDateTime after);
+    int countByUserAndTypeAndCreatedAtAfter(User user, EmailRequestType type, LocalDateTime after);
 }

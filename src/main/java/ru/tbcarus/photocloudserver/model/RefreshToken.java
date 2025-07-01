@@ -20,7 +20,7 @@ public class RefreshToken {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Integer id;
+    private Long id;
     private String token;
     private String userName;
     private LocalDateTime expires;

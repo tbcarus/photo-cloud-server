@@ -24,7 +24,7 @@ public class User implements UserDetails {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Integer id;
+    private Long id;
 
     private String email;
     private String password;
@@ -40,7 +40,7 @@ public class User implements UserDetails {
     private Set<Role> roles;
 
     @CreationTimestamp
-    private LocalDateTime createDate;
+    private LocalDateTime createdAt;
 
     @UpdateTimestamp
     private LocalDateTime lastUpdate;

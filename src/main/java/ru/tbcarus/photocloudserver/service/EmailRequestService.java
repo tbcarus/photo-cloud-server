@@ -38,7 +38,7 @@ public class EmailRequestService {
     }
 
     public EmailRequest checkAndGenerateCode(User user, EmailRequestType type) {
-        int tokensCount = emailRequestRepository.countByUserAndTypeAndCreateDateAfter(user, type, LocalDateTime.now().minusDays(3));
+        int tokensCount = emailRequestRepository.countByUserAndTypeAndCreatedAtAfter(user, type, LocalDateTime.now().minusDays(3));
 
         if (tokensCount >= 3) {
             throw new BadRegistrationRequest(ErrorType.TOO_MUCH_REPEAT_REQUESTS);
@@ -63,7 +63,7 @@ public class EmailRequestService {
         User user = userRepository.findById(emailRequest.getUser().getId()).get();
         user.setPassword(passwordEncoder.encode(password));
         emailRequest.setUsed(true);
-        List<EmailRequest> list = emailRequestRepository.findAllByUserIdAndCreateDateBetweenAndTypeOrderByCreateDateDesc(
+        List<EmailRequest> list = emailRequestRepository.findAllByUserIdAndCreatedAtBetweenAndTypeOrderByCreatedAtDesc(
                 user.getId(),
                 LocalDateTime.now().minusDays(ConfigUtil.DEFAULT_EXPIRED_DAYS),
                 LocalDateTime.now(),
