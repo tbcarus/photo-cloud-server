@@ -47,7 +47,7 @@ public class MediaFileService {
 
         String originalFilename = file.getOriginalFilename();
         String extension = FilenameUtils.getExtension(originalFilename);
-        String storageFilename = UUID.randomUUID() + "." + extension;
+        String storageFilename = originalFilename + "." + UUID.randomUUID() + "." + extension;
 
         Path userDir = Paths.get(baseStoragePath, user.getId().toString());
         Files.createDirectories(userDir);
