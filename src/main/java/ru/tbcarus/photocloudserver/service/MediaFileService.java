@@ -12,9 +12,11 @@ import ru.tbcarus.photocloudserver.exception.EntityNotFoundException;
 import ru.tbcarus.photocloudserver.model.MediaFile;
 import ru.tbcarus.photocloudserver.model.MediaType;
 import ru.tbcarus.photocloudserver.model.User;
+import ru.tbcarus.photocloudserver.model.dto.MediaFileChecksumDto;
 import ru.tbcarus.photocloudserver.model.dto.MediaFileDto;
 import ru.tbcarus.photocloudserver.model.dto.mapper.MediaFileMapper;
 import ru.tbcarus.photocloudserver.repository.MediaFileRepository;
+import ru.tbcarus.photocloudserver.util.FileUtils;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -22,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -45,6 +48,9 @@ public class MediaFileService {
             throw new IllegalArgumentException("MIME-тип не определён");
         }
 
+        byte[] fileBytes = file.getBytes();
+        String checksum = FileUtils.calculateSHA256(fileBytes);
+
         String originalFilename = file.getOriginalFilename();
         String extension = FilenameUtils.getExtension(originalFilename);
         String storageFilename = originalFilename + "." + UUID.randomUUID() + "." + extension;
@@ -65,6 +71,7 @@ public class MediaFileService {
                 .size(file.getSize())
                 .type(MediaType.fromMimeType(mimeType))
                 .user(user)
+                .checksum(checksum)
                 .build();
 
         return mediaFileMapper.toDto(mediaFileRepository.save(mediaFile));
@@ -86,5 +93,10 @@ public class MediaFileService {
         Files.deleteIfExists(path);
         mediaFileRepository.delete(file);
     }
+
+    public List<MediaFileChecksumDto> getChecksumsForUser(Long userId) {
+        return mediaFileRepository.findAllChecksumsAndOriginalFilenamesByUserId(userId);
+    }
+
 
 }

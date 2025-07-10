@@ -12,13 +12,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class MediaFileDto {
-    private Long id;
+public class MediaFileChecksumDto {
     private String originalFilename;
-    private String storageFilename;
-    private String mimeType;
-    private Long size;
-    private MediaType type;
     private String checksum;
-    private LocalDateTime createdAt;
 }

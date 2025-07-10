@@ -17,12 +17,15 @@ import org.springframework.web.multipart.MultipartFile;
 import ru.tbcarus.photocloudserver.exception.FileNotFoundException;
 import ru.tbcarus.photocloudserver.model.MediaFile;
 import ru.tbcarus.photocloudserver.model.User;
+import ru.tbcarus.photocloudserver.model.dto.MediaFileChecksumDto;
 import ru.tbcarus.photocloudserver.model.dto.MediaFileDto;
 import ru.tbcarus.photocloudserver.service.MediaFileService;
 
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.attribute.UserPrincipal;
+import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
@@ -31,6 +34,7 @@ public class MediaFileController {
     public static final String UPLOAD_URL = "/api/v1/photos/upload"; // загрузка файлов
     public static final String PHOTOS_URL = "/api/v1/files"; // список фото (пагинация + фильтры)
     public static final String PHOTO_URL = "/api/v1/photos/{id}"; // метаданные фото
+    public static final String CHECKSUMS_URL = "/api/v1/media/checksums"; // метаданные фото
     public static final String PHOTO_THUMBNAIL_URL = "/api/v1/photos/{id}/thumbnail"; // миниатюра (кэшировать!).
     public static final String DOWNLOAD_URL = "/api/v1/photos/{id}/download"; // скачивание оригинала
     public static final String ALBUM_URL = "/api/v1/albums";
@@ -77,6 +81,11 @@ public class MediaFileController {
     public ResponseEntity<Void> deleteFile(@PathVariable Long id, @AuthenticationPrincipal User user) throws IOException {
         mediaFileService.deleteFileForCurrentUser(id, user);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping(CHECKSUMS_URL)
+    public ResponseEntity<List<MediaFileChecksumDto>> getChecksums(@AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(mediaFileService.getChecksumsForUser(user.getId()));
     }
 
 }

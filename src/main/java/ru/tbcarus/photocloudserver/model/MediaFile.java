@@ -37,6 +37,9 @@ public class MediaFile {
     @JoinColumn(name = "user_id")
     private User user;
 
+    @Column(length = 64, nullable = false)
+    private String checksum; // SHA-256 hex string
+
     @CreationTimestamp
     @Column(updatable = false)
     private LocalDateTime createdAt;
