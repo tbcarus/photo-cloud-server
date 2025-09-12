@@ -59,6 +59,7 @@
 ## ⚙️ Запуск проекта
 
 ### Пример переменных
+В .env файле
 ```bash
 DB_URL=jdbc:postgresql://localhost:5432/photo_cloud
 DB_USER=postgres

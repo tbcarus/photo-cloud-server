@@ -15,16 +15,6 @@ import java.util.UUID;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(ExpiredJwtException.class)
-    public ResponseEntity<ErrorResponse> handleExpiredJwtException(ExpiredJwtException e) {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(
-                ErrorResponse.builder()
-                        .uuid(UUID.randomUUID())
-                        .message(e.getMessage())
-                        .build()
-        );
-    }
-
     @ExceptionHandler(TokenRevokedException.class)
     public ResponseEntity<ErrorResponse> handleTokenRevokedException(TokenRevokedException e) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN)

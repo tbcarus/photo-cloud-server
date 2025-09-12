@@ -8,6 +8,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import ru.tbcarus.photocloudserver.config.filter.JsonAccessDeniedHandler;
+import ru.tbcarus.photocloudserver.config.filter.JsonAuthenticationEntryPoint;
 import ru.tbcarus.photocloudserver.config.filter.JwtAuthenticationFilter;
 import ru.tbcarus.photocloudserver.controller.RegisterController;
 import ru.tbcarus.photocloudserver.controller.RootController;
@@ -19,6 +21,8 @@ import ru.tbcarus.photocloudserver.controller.RootController;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final JsonAuthenticationEntryPoint authenticationEntryPoint;
+    private final JsonAccessDeniedHandler accessDeniedHandler;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -30,6 +34,10 @@ public class SecurityConfig {
                                 "/api/auth/reset-password",
                                 "/swagger-ui/**", "/swagger-resources/*", "/v3/api-docs/**").permitAll()
                         .anyRequest().authenticated())
+                .exceptionHandling(ex -> ex
+                .authenticationEntryPoint(authenticationEntryPoint) // 401
+                .accessDeniedHandler(accessDeniedHandler)           // 403
+        )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .csrf(csrf -> csrf.disable());
 
