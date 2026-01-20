@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import ru.tbcarus.photocloudserver.exception.EntityNotFoundException;
 import ru.tbcarus.photocloudserver.exception.TokenRevokedException;
 import ru.tbcarus.photocloudserver.model.RefreshToken;
+import ru.tbcarus.photocloudserver.model.TokenType;
 import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.repository.RefreshTokenRepository;
 
@@ -38,8 +39,10 @@ public class JwtService {
     }
 
     public String generateAccessToken(User user) {
+        Map<String, Object> claims = generateClaims(user);
+        claims.put(TokenType.TOKEN_TYPE.getValue(), TokenType.ACCESS.getValue());
         return Jwts.builder()
-                .claims(generateClaims(user))
+                .claims(claims)
                 .subject(user.getUsername())
                 .issuedAt(new Date(System.currentTimeMillis()))
                 .expiration(new Date(System.currentTimeMillis() + expirationTime))
@@ -51,8 +54,11 @@ public class JwtService {
 //        if (refreshTokenFromDB.isPresent()) {
 //            return refreshTokenFromDB.get().getToken();
 //        }
+        Map<String, Object> claims = generateClaims(user);
+        claims.put(TokenType.TOKEN_TYPE.getValue(), TokenType.REFRESH.getValue());
         String refreshToken = Jwts.builder()
-                .claims(generateClaims(user))
+                .claims(claims)
+                .subject(user.getUsername())
                 .issuedAt(new Date(System.currentTimeMillis()))
                 .expiration(new Date(System.currentTimeMillis() + refreshExpirationTime))
                 .signWith(getSigningKey()).compact();
@@ -108,6 +114,10 @@ public class JwtService {
 
     public String extractUserName(String token) {
         return extractClaim(token, Claims::getSubject);
+    }
+
+    public String extractTokenType(String token) {
+        return extractClaim(token, c -> c.get(TokenType.TOKEN_TYPE.getValue(), String.class));
     }
 
     private <T> T extractClaim(String token, Function<Claims, T> claimsResolvers) {

@@ -17,6 +17,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import ru.tbcarus.photocloudserver.model.TokenType;
 import ru.tbcarus.photocloudserver.service.JwtService;
 import ru.tbcarus.photocloudserver.service.UserService;
 
@@ -41,6 +42,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         try {
+            String tokenType = jwtService.extractTokenType(token);
+            if(!TokenType.ACCESS.getValue().equals(tokenType)) {
+                filterChain.doFilter(request, response);
+                return;
+            }
             String username = jwtService.extractUserName(token);
             if (StringUtils.isNotEmpty(username) && SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = userService.loadUserByUsername(username);
