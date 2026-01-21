@@ -29,7 +29,7 @@
 1. Реализовать полноценную файловую иерархию. Для этого, наверное, понадобится класс ПАПКА с полем ПАПКА. и т.д.
 
 Starting 2026. Refresh
-1. Добавить claim tokenType = ACCESS/REFRESH. Сейчас в рефреш нет subject, а фильтр не отличает ACCESS/REFRESH, поэтому костыль
+v1. Добавить claim tokenType = ACCESS/REFRESH. Сейчас в рефреш нет subject, а фильтр не отличает ACCESS/REFRESH, поэтому костыль
 в виде отсутствия subject
 2.
 

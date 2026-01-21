@@ -24,7 +24,6 @@ import ru.tbcarus.photocloudserver.service.MediaFileService;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.attribute.UserPrincipal;
 import java.util.List;
 
 @RestController
