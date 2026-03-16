@@ -39,3 +39,4 @@ storage:
 logging:
   level:
     liquibase: info
+    ru.tbcarus.photocloudserver: INFO
