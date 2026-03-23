@@ -18,6 +18,10 @@ import ru.tbcarus.photocloudserver.model.dto.mapper.MediaFileMapper;
 import ru.tbcarus.photocloudserver.repository.MediaFileRepository;
 import ru.tbcarus.photocloudserver.util.FileUtils;
 
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+import ru.tbcarus.photocloudserver.model.dto.MediaFileResponse;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -31,6 +35,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 public class MediaFileService {
+
+    private static final String MEDIA_BASE_PATH = "/api/v1/media/";
 
     private final MediaFileRepository mediaFileRepository;
     private final MediaFileMapper mediaFileMapper;
@@ -98,5 +104,16 @@ public class MediaFileService {
         return mediaFileRepository.findAllChecksumsAndOriginalFilenamesByUserId(userId);
     }
 
-
+    public MediaFileResponse toResponse(MediaFile mediaFile, HttpServletRequest request) {
+        String baseUrl = ServletUriComponentsBuilder.fromRequestUri(request)
+                .replacePath("")
+                .build()
+                .toUriString();
+        MediaFileResponse response = mediaFileMapper.toResponse(mediaFile);
+        response.setUrl(baseUrl + MEDIA_BASE_PATH + mediaFile.getId() + "/download");
+        response.setThumbnailUrl(mediaFile.getThumbnailPath() != null
+                ? baseUrl + MEDIA_BASE_PATH + mediaFile.getId() + "/thumb"
+                : null);
+        return response;
+    }
 }
