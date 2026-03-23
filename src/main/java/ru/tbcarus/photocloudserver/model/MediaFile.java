@@ -26,6 +26,12 @@ public class MediaFile {
 
     private String storageFilename;
 
+    @Column(nullable = false)
+    private String storagePath; // путь к файлу на диске
+
+    @Column
+    private String thumbnailPath;
+
     private String mimeType;
 
     private Long size;
@@ -42,5 +48,8 @@ public class MediaFile {
 
     @CreationTimestamp
     @Column(updatable = false)
-    private LocalDateTime createdAt;
+    private LocalDateTime uploadedAt;
+
+    @Column(nullable = false)
+    private LocalDateTime createdAt;     // из метаданных клиента
 }

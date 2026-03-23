@@ -10,7 +10,7 @@ CREATE TABLE media_file
     mime_type         VARCHAR(100)                        NOT NULL,
     size              BIGINT                              NOT NULL,
     type              VARCHAR(20)                         NOT NULL,
-    created_at        TIMESTAMP                           NOT NULL DEFAULT now(),
+    uploaded_at         TIMESTAMP                           NOT NULL DEFAULT now(),
     user_id           BIGINT                              NOT NULL
         REFERENCES users (id) ON DELETE CASCADE
 );

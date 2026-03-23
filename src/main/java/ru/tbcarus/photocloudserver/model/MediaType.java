@@ -5,6 +5,7 @@ import java.util.Arrays;
 public enum MediaType {
     IMAGE("image"),
     VIDEO("video"),
+    AUDIO("audio"),
     FILE("application");
 
     private final String mimePrefix;

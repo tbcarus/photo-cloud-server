@@ -16,7 +16,7 @@ public interface MediaFileMapper {
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "user", ignore = true)
-    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "uploadedAt", ignore = true)
     MediaFile toEntity(MediaFileDto dto);
 
     MediaFileDto toDto(MediaFile mediaFile);

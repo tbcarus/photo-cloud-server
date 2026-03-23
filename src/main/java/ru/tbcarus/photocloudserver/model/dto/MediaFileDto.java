@@ -20,5 +20,5 @@ public class MediaFileDto {
     private Long size;
     private MediaType type;
     private String checksum;
-    private LocalDateTime createdAt;
+    private LocalDateTime uploadedAt;
 }
