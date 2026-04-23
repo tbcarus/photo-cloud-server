@@ -17,6 +17,7 @@ import java.util.Map;
 @Tag(name = "Root actions")
 public class RootController {
     public static final String TEST_URL = "api/test";
+    public static final String TEST_AUTH_URL = "api/test/auth";
 
     @Operation(summary = "Test permit all connection")
     @GetMapping(TEST_URL)
@@ -25,7 +26,7 @@ public class RootController {
     }
 
     @Operation(summary = "Test authenticated connection")
-    @GetMapping(TEST_URL + "/auth")
+    @GetMapping(TEST_AUTH_URL)
     public ResponseEntity<Map<String, String>> testAuth(@AuthenticationPrincipal User user) {
         return ResponseEntity.status(HttpStatus.OK).body(Map.of("message","All good! Authenticated connection. Hello " + user.getUsername()));
     }
