@@ -9,6 +9,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import ru.tbcarus.photocloudserver.exception.EntityNotFoundException;
+import ru.tbcarus.photocloudserver.controller.MediaFileController;
 import ru.tbcarus.photocloudserver.model.MediaFile;
 import ru.tbcarus.photocloudserver.model.MediaType;
 import ru.tbcarus.photocloudserver.model.User;
@@ -35,8 +36,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 public class MediaFileService {
+    // Stores media files and exposes current media-related business operations.
 
-    private static final String MEDIA_BASE_PATH = "/api/v1/media/";
+    private static final String MEDIA_BASE_PATH = MediaFileController.BASE_URL + "/";
 
     private final MediaFileRepository mediaFileRepository;
     private final MediaFileMapper mediaFileMapper;
@@ -93,6 +95,10 @@ public class MediaFileService {
                 .orElseThrow(() -> new EntityNotFoundException(fileId.toString(), String.format("File %d not found", fileId)));
     }
 
+    public MediaFileDto getFileDtoForCurrentUser(Long fileId, User user) {
+        return mediaFileMapper.toDto(getFileForCurrentUser(fileId, user));
+    }
+
     public void deleteFileForCurrentUser(Long fileId, User user) throws IOException {
         MediaFile file = getFileForCurrentUser(fileId, user);
         Path path = Paths.get(file.getStorageFilename());
@@ -112,7 +118,7 @@ public class MediaFileService {
         MediaFileResponse response = mediaFileMapper.toResponse(mediaFile);
         response.setUrl(baseUrl + MEDIA_BASE_PATH + mediaFile.getId() + "/download");
         response.setThumbnailUrl(mediaFile.getThumbnailPath() != null
-                ? baseUrl + MEDIA_BASE_PATH + mediaFile.getId() + "/thumb"
+                ? baseUrl + MEDIA_BASE_PATH + mediaFile.getId() + "/thumbnail"
                 : null);
         return response;
     }

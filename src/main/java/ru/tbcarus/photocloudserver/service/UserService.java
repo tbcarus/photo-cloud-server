@@ -22,6 +22,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 @Slf4j
 public class UserService implements UserDetailsService {
+    // Manages users and currently hosts authentication, registration, and password workflows.
 
     private final UserRepository userRepository;
     private final UserRegisterMapper userRegisterMapper;

@@ -16,13 +16,16 @@ import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
+@RequestMapping(AuthController.BASE_URL)
 @Tag(name = "Authentication")
 public class AuthController {
-    public static final String LOGIN_URL = "/api/auth/login";
-    public static final String LOGOUT_URL = "/api/auth/logout";
-    public static final String LOGOUT_ALL_URL = "/api/auth/logout-all";
-    public static final String LOGOUT_OTHER_URL = "/api/auth/logout-other";
-    public static final String REFRESH_TOKEN_URL = "/api/user/refresh-token";
+    // Handles authentication, logout scenarios, and refresh-token lifecycle.
+    public static final String BASE_URL = ApiPaths.API_V1 + "/auth";
+    public static final String LOGIN_URL = "/login";
+    public static final String LOGOUT_URL = "/logout";
+    public static final String LOGOUT_ALL_URL = "/logout-all";
+    public static final String LOGOUT_OTHERS_URL = "/logout-others";
+    public static final String REFRESH_TOKEN_URL = "/refresh-token";
 
     private final UserService userService;
 
@@ -48,8 +51,8 @@ public class AuthController {
     }
 
     @Operation(summary = "User logout all other sessions except current")
-    @PostMapping(LOGOUT_OTHER_URL)
-    public ResponseEntity<Map<String, String>> logoutOther(@Validated @RequestBody LogoutRequest logoutRequest,
+    @PostMapping(LOGOUT_OTHERS_URL)
+    public ResponseEntity<Map<String, String>> logoutOthers(@Validated @RequestBody LogoutRequest logoutRequest,
                                                            @AuthenticationPrincipal User user) {
         userService.logoutOther(logoutRequest, user);
         return ResponseEntity.status(HttpStatus.OK).body(Map.of("message", "All other logged out successfully"));

@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import ru.tbcarus.photocloudserver.model.User;
 
@@ -14,9 +15,12 @@ import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
+@RequestMapping(ApiPaths.API_V1)
 @Tag(name = "Root actions")
 public class RootController {
-    public static final String TEST_URL = "api/test";
+    // Provides lightweight test endpoints for Android client connectivity checks.
+    public static final String TEST_URL = "/test";
+    public static final String TEST_AUTH_URL = TEST_URL + "/auth";
 
     @Operation(summary = "Test permit all connection")
     @GetMapping(TEST_URL)
@@ -25,7 +29,7 @@ public class RootController {
     }
 
     @Operation(summary = "Test authenticated connection")
-    @GetMapping(TEST_URL + "/auth")
+    @GetMapping(TEST_AUTH_URL)
     public ResponseEntity<Map<String, String>> testAuth(@AuthenticationPrincipal User user) {
         return ResponseEntity.status(HttpStatus.OK).body(Map.of("message","All good! Authenticated connection. Hello " + user.getUsername()));
     }

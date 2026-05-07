@@ -24,6 +24,7 @@ import java.util.function.Function;
 @Service
 @RequiredArgsConstructor
 public class JwtService {
+    // Generates, validates, refreshes, and revokes JWT access and refresh tokens.
     private final RefreshTokenRepository refreshTokenRepository;
 
     @Value("${token.signing.key}")
