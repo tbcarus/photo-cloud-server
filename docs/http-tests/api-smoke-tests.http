@@ -1,22 +1,25 @@
 @baseUrl = http://localhost:8080
-@accessToken = replace-with-access-token
-@refreshToken = replace-with-refresh-token
-@email = smoke-user@example.com
-@password = password123
+@accessToken = eyJhbGciOiJIUzM4NCJ9.eyJyb2xlcyI6WyJVU0VSIl0sInRva2VuX3R5cGUiOiJBQ0NFU1MiLCJzdWIiOiJ0YmNhcnVzQHlhbmRleC5ydSIsImlhdCI6MTc3ODI0OTYxMCwiZXhwIjoxNzc4MjUwMjEwfQ.eOTj6kpYWBwb1JUXBpBlKRgcd0x75E1kjcoMZwvakBipY5ISh6203VRo7g2B_Ci3
+@refreshToken = eyJhbGciOiJIUzM4NCJ9.eyJyb2xlcyI6WyJVU0VSIl0sInRva2VuX3R5cGUiOiJSRUZSRVNIIiwic3ViIjoidGJjYXJ1c0B5YW5kZXgucnUiLCJpYXQiOjE3NzgyNDkyMDcsImV4cCI6MTc3ODg1NDAwN30.7cN9zqRzGPrUmzi6_efpPrmmCHmIIfB3eKW3trybBYH9t6ZEzhSrF4wyZDITysYZ
+@email = tbcarus@yandex.ru
+@password = pass1
 @confirmationCode = replace-with-registration-code
-@passwordResetCode = replace-with-password-reset-code
+@passwordResetCode = 5761d001-0660-4052-9945-b2a83103a692
 @mediaFileId = 1
 @checksum = replace-with-sha256-checksum
-@uploadFile = ./sample-media.jpg
+@uploadFile = C:/Users/balashov/Pictures/Снимок1111.JPG
 
 ### РЕАЛИЗОВАНО - RootController: публичная проверка подключения
+#OK
 GET {{baseUrl}}/api/v1/test
 
 ### РЕАЛИЗОВАНО - RootController: проверка подключения с авторизацией
+#OK
 GET {{baseUrl}}/api/v1/test/auth
 Authorization: Bearer {{accessToken}}
 
 ### РЕАЛИЗОВАНО - RegisterController: регистрация пользователя
+#OK
 POST {{baseUrl}}/api/v1/auth/register
 Content-Type: application/json
 
@@ -26,12 +29,14 @@ Content-Type: application/json
 }
 
 ### РЕАЛИЗОВАНО - RegisterController: подтверждение регистрации
+#OK
 GET {{baseUrl}}/api/v1/auth/register/confirm?code={{confirmationCode}}
 
 ### TODO / НЕ РЕАЛИЗОВАНО - RegisterController: повторная отправка подтверждения регистрации
 POST {{baseUrl}}/api/v1/auth/register/resend
 
-### РЕАЛИЗОВАНО - AuthController: логин и сохранение токенов
+### РЕАЛИЗОВАНО - AuthController: логин
+#OK
 POST {{baseUrl}}/api/v1/auth/login
 Content-Type: application/json
 
@@ -40,12 +45,8 @@ Content-Type: application/json
   "password": "{{password}}"
 }
 
-> {%
-    client.global.set("accessToken", response.body.accessToken);
-    client.global.set("refreshToken", response.body.refreshToken);
-%}
-
-### РЕАЛИЗОВАНО - AuthController: обновление access token и сохранение нового токена
+### РЕАЛИЗОВАНО - AuthController: обновление access token
+#OK
 POST {{baseUrl}}/api/v1/auth/refresh-token
 Content-Type: application/json
 
@@ -53,11 +54,8 @@ Content-Type: application/json
   "refreshToken": "{{refreshToken}}"
 }
 
-> {%
-    client.global.set("accessToken", response.body.accessToken);
-%}
-
 ### РЕАЛИЗОВАНО - AuthController: logout текущей сессии/устройства
+#OK
 POST {{baseUrl}}/api/v1/auth/logout
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json
@@ -67,10 +65,12 @@ Content-Type: application/json
 }
 
 ### РЕАЛИЗОВАНО - AuthController: logout всех сессий
+#OK
 POST {{baseUrl}}/api/v1/auth/logout-all
 Authorization: Bearer {{accessToken}}
 
 ### РЕАЛИЗОВАНО - AuthController: logout всех сессий, кроме текущей
+#OK
 POST {{baseUrl}}/api/v1/auth/logout-others
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json
@@ -80,9 +80,11 @@ Content-Type: application/json
 }
 
 ### РЕАЛИЗОВАНО - PasswordController: запрос сброса пароля
+#OK
 POST {{baseUrl}}/api/v1/auth/password/reset/request?email={{email}}
 
 ### РЕАЛИЗОВАНО - PasswordController: подтверждение сброса пароля
+#OK - убедиться, что при замене пароля ращлогиниваются все логины (все refresh токены отзываются)
 POST {{baseUrl}}/api/v1/auth/password/reset/confirm?password={{password}}&code={{passwordResetCode}}
 
 ### TODO / НЕ РЕАЛИЗОВАНО - PasswordController: повторная отправка ссылки сброса пароля
@@ -95,6 +97,7 @@ GET {{baseUrl}}/api/v1/auth/password/reset/page?code={{passwordResetCode}}
 POST {{baseUrl}}/api/v1/auth/password/reset/page
 
 ### РЕАЛИЗОВАНО - UserController: получение профиля текущего пользователя
+#ОК
 GET {{baseUrl}}/api/v1/profile
 Authorization: Bearer {{accessToken}}
 
@@ -122,6 +125,9 @@ Content-Type: application/json
 }
 
 ### РЕАЛИЗОВАНО - MediaFileController: загрузка одного media-файла
+#Не пускае, говорит, что "message": "Unauthorized: access token expired or invalid". Но там точно действительный токен
+#Это я проверит по тестовому эндпоинту. Так же он всё равно в storage создал файл, но пустой.
+#Так же дальше будет вопрос по наименованиям файлов в storage. Сейчас он сохранил filename + UUID
 POST {{baseUrl}}/api/v1/media
 Authorization: Bearer {{accessToken}}
 Content-Type: multipart/form-data; boundary=SmokeBoundary
@@ -130,10 +136,11 @@ Content-Type: multipart/form-data; boundary=SmokeBoundary
 Content-Disposition: form-data; name="file"; filename="sample-media.jpg"
 Content-Type: image/jpeg
 
-< {{uploadFile}}
+File = @{{uploadFile}}
 --SmokeBoundary--
 
 ### РЕАЛИЗОВАНО - MediaFileController: список media-файлов с пагинацией и будущими параметрами фильтрации
+#ОК что-то прилетело, но пока база пустая
 GET {{baseUrl}}/api/v1/media?page=0&size=10&type=IMAGE&from=2026-01-01T00:00:00&to=2026-12-31T23:59:59
 Authorization: Bearer {{accessToken}}
 
@@ -151,6 +158,7 @@ Content-Type: application/json
 }
 
 ### РЕАЛИЗОВАНО - MediaFileController: скачивание media-файла
+#Не проверено
 GET {{baseUrl}}/api/v1/media/{{mediaFileId}}/download
 Authorization: Bearer {{accessToken}}
 
@@ -159,10 +167,12 @@ GET {{baseUrl}}/api/v1/media/{{mediaFileId}}/thumbnail
 Authorization: Bearer {{accessToken}}
 
 ### РЕАЛИЗОВАНО - MediaFileController: удаление media-файла
+#Не проверено
 DELETE {{baseUrl}}/api/v1/media/{{mediaFileId}}
 Authorization: Bearer {{accessToken}}
 
 ### РЕАЛИЗОВАНО - MediaFileController: получение checksum'ов текущего пользователя
+#Не проверено
 GET {{baseUrl}}/api/v1/media/checksums
 Authorization: Bearer {{accessToken}}
 
