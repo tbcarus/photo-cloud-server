@@ -21,6 +21,7 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class EmailRequestService {
+    // Creates, validates, expires, and consumes email verification codes.
 
     private final UserRepository userRepository;
     private final EmailRequestRepository emailRequestRepository;
@@ -54,6 +55,16 @@ public class EmailRequestService {
         User user = optU.orElseThrow(() -> new BadRegistrationRequest(ErrorType.NOT_FOUND));
         emailRequest.setUsed(true);
         user.setEnabled(true);
+    }
+
+    @Transactional
+    public String confirmRegistration(String code) {
+        EmailRequest emailRequest = getEmailRequestByCode(code);
+        checkEmailRequest(emailRequest, EmailRequestType.ACTIVATE);
+        User user = userRepository.findById(emailRequest.getUser().getId()).orElseThrow(() -> new BadRegistrationRequest(ErrorType.NOT_FOUND));
+        emailRequest.setUsed(true);
+        user.setEnabled(true);
+        return user.getEmail();
     }
 
     @Transactional

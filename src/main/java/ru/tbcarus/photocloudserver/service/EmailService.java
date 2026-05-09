@@ -13,6 +13,8 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.thymeleaf.context.Context;
 import org.thymeleaf.spring6.SpringTemplateEngine;
+import ru.tbcarus.photocloudserver.controller.PasswordController;
+import ru.tbcarus.photocloudserver.controller.RegisterController;
 import ru.tbcarus.photocloudserver.model.EmailContext;
 import ru.tbcarus.photocloudserver.model.EmailRequest;
 import ru.tbcarus.photocloudserver.model.EmailRequestType;
@@ -26,6 +28,7 @@ import java.util.Objects;
 @RequiredArgsConstructor
 @Slf4j
 public class EmailService {
+    // Renders email templates and sends registration and password-management emails.
 
     private final JavaMailSender mailSender;
     private final SpringTemplateEngine templateEngine;
@@ -73,16 +76,18 @@ public class EmailService {
         map.put("emailRequest", emailRequest);
         ServletRequestAttributes servletRequestAttributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         HttpServletRequest request = Objects.requireNonNull(servletRequestAttributes).getRequest();
+        String targetPath = EmailRequestType.ACTIVATE.equals(emailRequest.getType())
+                ? RegisterController.BASE_URL + RegisterController.CONFIRM_URL
+                : PasswordController.BASE_URL + PasswordController.RESET_PAGE_URL;
+
         StringBuilder urlBuilder = new StringBuilder();
         urlBuilder
                 .append(request.getScheme()).append("://")
                 .append(request.getServerName())
                 .append(request.getServerPort() == 80 || request.getServerPort() == 443 ? "" : ":" + request.getServerPort())
                 .append(request.getContextPath())
-                .append("/register/")
-                .append(emailRequest.getType().name())
-                .append("?email=").append(emailRequest.getUser().getEmail())
-                .append("&code=").append(emailRequest.getCode());
+                .append(targetPath)
+                .append("?code=").append(emailRequest.getCode());
         String link = urlBuilder.toString();
 
         map.put("link", link);

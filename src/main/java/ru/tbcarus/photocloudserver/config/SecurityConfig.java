@@ -12,6 +12,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import ru.tbcarus.photocloudserver.config.filter.JsonAccessDeniedHandler;
 import ru.tbcarus.photocloudserver.config.filter.JsonAuthenticationEntryPoint;
 import ru.tbcarus.photocloudserver.config.filter.JwtAuthenticationFilter;
+import ru.tbcarus.photocloudserver.controller.ApiPaths;
 import ru.tbcarus.photocloudserver.controller.AuthController;
 import ru.tbcarus.photocloudserver.controller.PasswordController;
 import ru.tbcarus.photocloudserver.controller.RegisterController;
@@ -33,13 +34,16 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests((requests) -> requests
                         .requestMatchers(
-                                RootController.TEST_URL,
-                                RegisterController.REGISTER_URL,
-                                RegisterController.VERIFY_EMAIL_URL,
-                                AuthController.LOGIN_URL,
-                                AuthController.REFRESH_TOKEN_URL,
-                                PasswordController.FORGOT_PASSWORD_URL,
-                                PasswordController.RESET_PASSWORD_URL,
+                                ApiPaths.API_V1 + RootController.TEST_URL,
+                                RegisterController.BASE_URL + RegisterController.REGISTER_URL,
+                                RegisterController.BASE_URL + RegisterController.CONFIRM_URL,
+                                RegisterController.BASE_URL + RegisterController.RESEND_URL,
+                                AuthController.BASE_URL + AuthController.LOGIN_URL,
+                                AuthController.BASE_URL + AuthController.REFRESH_TOKEN_URL,
+                                PasswordController.BASE_URL + PasswordController.RESET_REQUEST_URL,
+                                PasswordController.BASE_URL + PasswordController.RESET_CONFIRM_URL,
+                                PasswordController.BASE_URL + PasswordController.RESET_RESEND_URL,
+                                PasswordController.BASE_URL + PasswordController.RESET_PAGE_URL,
                                 "/swagger-ui/**", "/swagger-resources/*", "/v3/api-docs/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex

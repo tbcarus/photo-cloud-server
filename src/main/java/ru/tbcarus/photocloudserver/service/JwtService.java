@@ -24,12 +24,13 @@ import java.util.function.Function;
 @Service
 @RequiredArgsConstructor
 public class JwtService {
+    // Generates, validates, refreshes, and revokes JWT access and refresh tokens.
     private final RefreshTokenRepository refreshTokenRepository;
 
     @Value("${token.signing.key}")
     private String jwtSigningKey;
 
-    private final long expirationTime = 1 * 60 * 1000;
+    private final long expirationTime = 10 * 60 * 1000;
     private final long refreshExpirationTime = 7 * 24 * 60 * 60 * 1000;
 
     private Map<String, Object> generateClaims(User user) {

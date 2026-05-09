@@ -15,11 +15,14 @@ import java.util.Map;
 
 @RestController
 @RequiredArgsConstructor
+@RequestMapping(RegisterController.BASE_URL)
 @Tag(name = "Registration")
 public class RegisterController {
-    public static final String REGISTER_URL = "/api/auth/register";
-    public static final String VERIFY_EMAIL_URL = "/register/ACTIVATE";
-    public static final String RESEND_VERIFY_EMAIL_URL = "/api/auth/resend-verify-email";
+    // Handles user registration, registration confirmation, and confirmation resend entrypoints.
+    public static final String BASE_URL = ApiPaths.API_V1 + "/auth/register";
+    public static final String REGISTER_URL = "";
+    public static final String CONFIRM_URL = "/confirm";
+    public static final String RESEND_URL = "/resend";
 
     private final UserService userService;
     private final EmailRequestService emailRequestService;
@@ -32,9 +35,16 @@ public class RegisterController {
     }
 
     @Operation(summary = "Confirm user registration")
-    @GetMapping(VERIFY_EMAIL_URL)
-    public ResponseEntity<String> verifyEmail(@RequestParam String email, @RequestParam String code) {
-        emailRequestService.confirmEmail(email, code);
+    @GetMapping(CONFIRM_URL)
+    public ResponseEntity<String> verifyEmail(@RequestParam String code) {
+        String email = emailRequestService.confirmRegistration(code);
         return ResponseEntity.status(HttpStatus.OK).body(String.format("User %s was verified", email));
+    }
+
+    @Operation(summary = "Reserved endpoint for resending registration confirmation")
+    @PostMapping(RESEND_URL)
+    public ResponseEntity<Map<String, String>> resendVerifyEmail() {
+        // TODO: Resend registration confirmation with cooldown, attempt limit, and code expiration checks.
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).body(Map.of("message", "Registration confirmation resend is not implemented yet"));
     }
 }
