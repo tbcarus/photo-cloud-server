@@ -29,6 +29,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -75,6 +76,9 @@ public class MediaFileService {
         MediaFile mediaFile = MediaFile.builder()
                 .originalFilename(originalFilename)
                 .storageFilename(storageFilename)
+                .storagePath(String.format("/storage/%s/%s", user.getId().toString(), storageFilename))
+                .thumbnailPath(String.format("/storage/%s/%s", user.getId().toString(), storageFilename)) //TODO
+                .createdAt(LocalDateTime.now()) //TODO
                 .mimeType(mimeType)
                 .size(file.getSize())
                 .type(MediaType.fromMimeType(mimeType))

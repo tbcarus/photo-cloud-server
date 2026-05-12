@@ -1,6 +1,6 @@
 @baseUrl = http://localhost:8080
-@accessToken = eyJhbGciOiJIUzM4NCJ9.eyJyb2xlcyI6WyJVU0VSIl0sInRva2VuX3R5cGUiOiJBQ0NFU1MiLCJzdWIiOiJ0YmNhcnVzQHlhbmRleC5ydSIsImlhdCI6MTc3ODI0OTYxMCwiZXhwIjoxNzc4MjUwMjEwfQ.eOTj6kpYWBwb1JUXBpBlKRgcd0x75E1kjcoMZwvakBipY5ISh6203VRo7g2B_Ci3
-@refreshToken = eyJhbGciOiJIUzM4NCJ9.eyJyb2xlcyI6WyJVU0VSIl0sInRva2VuX3R5cGUiOiJSRUZSRVNIIiwic3ViIjoidGJjYXJ1c0B5YW5kZXgucnUiLCJpYXQiOjE3NzgyNDkyMDcsImV4cCI6MTc3ODg1NDAwN30.7cN9zqRzGPrUmzi6_efpPrmmCHmIIfB3eKW3trybBYH9t6ZEzhSrF4wyZDITysYZ
+@accessToken = eyJhbGciOiJIUzM4NCJ9.eyJyb2xlcyI6WyJVU0VSIl0sInRva2VuX3R5cGUiOiJBQ0NFU1MiLCJzdWIiOiJ0YmNhcnVzQHlhbmRleC5ydSIsImlhdCI6MTc3ODU5MTMxMiwiZXhwIjoxNzc4NTkyNTEyfQ.Ku_SGPuvcs4FYjag1p6SR0I4C5TVwKJit1BRNe8v0JymzaXzHKeS9EZNNTEGSa39
+@refreshToken = eyJhbGciOiJIUzM4NCJ9.eyJyb2xlcyI6WyJVU0VSIl0sInRva2VuX3R5cGUiOiJSRUZSRVNIIiwic3ViIjoidGJjYXJ1c0B5YW5kZXgucnUiLCJpYXQiOjE3Nzg1ODk4ODIsImV4cCI6MTc3OTE5NDY4Mn0.PJ4Y7V_He8wDlK-MNFW1DPr8ibGsMZxufFGdddQeGvs2RRyzzmPhW3roO_NFlqjg
 @email = tbcarus@yandex.ru
 @password = pass1
 @confirmationCode = replace-with-registration-code
@@ -136,7 +136,8 @@ Content-Type: multipart/form-data; boundary=SmokeBoundary
 Content-Disposition: form-data; name="file"; filename="sample-media.jpg"
 Content-Type: image/jpeg
 
-File = @{{uploadFile}}
+#File = @{{uploadFile}}
+< C:/Users/balashov/Pictures/Снимок1111.JPG
 --SmokeBoundary--
 
 ### РЕАЛИЗОВАНО - MediaFileController: список media-файлов с пагинацией и будущими параметрами фильтрации

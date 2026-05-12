@@ -30,7 +30,7 @@ public class JwtService {
     @Value("${token.signing.key}")
     private String jwtSigningKey;
 
-    private final long expirationTime = 10 * 60 * 1000;
+    private final long expirationTime = 20 * 60 * 1000;
     private final long refreshExpirationTime = 7 * 24 * 60 * 60 * 1000;
 
     private Map<String, Object> generateClaims(User user) {
