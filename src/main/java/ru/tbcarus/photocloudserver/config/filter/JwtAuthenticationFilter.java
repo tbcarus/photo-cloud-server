@@ -58,16 +58,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
             }
-            filterChain.doFilter(request, response);
         } catch (ExpiredJwtException ex) {
             SecurityContextHolder.clearContext();
             // Делегируем 401 в entry point
             entryPoint.commence(request, response, new InsufficientAuthenticationException("JWT expired", ex));
+            return;
 
         } catch (JwtException | IllegalArgumentException ex) {
             SecurityContextHolder.clearContext();
             entryPoint.commence(request, response, new InsufficientAuthenticationException("Invalid JWT", ex));
+            return;
         }
+
+        filterChain.doFilter(request, response);
     }
 
     private String resolveBearer(HttpServletRequest request) {

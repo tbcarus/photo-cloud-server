@@ -9,6 +9,7 @@ import ru.tbcarus.photocloudserver.model.MediaFile;
 import ru.tbcarus.photocloudserver.model.dto.MediaFileChecksumDto;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface MediaFileRepository extends JpaRepository<MediaFile, Long> {
@@ -16,7 +17,9 @@ public interface MediaFileRepository extends JpaRepository<MediaFile, Long> {
 
     Page<MediaFile> findAllByUserId(Long userId, Pageable pageable);
 
-    @Query("SELECT new ru.tbcarus.photocloudserver.model.dto.MediaFileChecksumDto(m.checksum, m.originalFilename) " +
+    Optional<MediaFile> findByUserIdAndChecksum(Long userId, String checksum);
+
+    @Query("SELECT new ru.tbcarus.photocloudserver.model.dto.MediaFileChecksumDto(m.originalFilename, m.checksum) " +
             "FROM MediaFile m WHERE m.user.id = :userId")
     List<MediaFileChecksumDto> findAllChecksumsAndOriginalFilenamesByUserId(Long userId);
 }

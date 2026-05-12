@@ -1,11 +1,11 @@
 @baseUrl = http://localhost:8080
-@accessToken = eyJhbGciOiJIUzM4NCJ9.eyJyb2xlcyI6WyJVU0VSIl0sInRva2VuX3R5cGUiOiJBQ0NFU1MiLCJzdWIiOiJ0YmNhcnVzQHlhbmRleC5ydSIsImlhdCI6MTc3ODU5MTMxMiwiZXhwIjoxNzc4NTkyNTEyfQ.Ku_SGPuvcs4FYjag1p6SR0I4C5TVwKJit1BRNe8v0JymzaXzHKeS9EZNNTEGSa39
-@refreshToken = eyJhbGciOiJIUzM4NCJ9.eyJyb2xlcyI6WyJVU0VSIl0sInRva2VuX3R5cGUiOiJSRUZSRVNIIiwic3ViIjoidGJjYXJ1c0B5YW5kZXgucnUiLCJpYXQiOjE3Nzg1ODk4ODIsImV4cCI6MTc3OTE5NDY4Mn0.PJ4Y7V_He8wDlK-MNFW1DPr8ibGsMZxufFGdddQeGvs2RRyzzmPhW3roO_NFlqjg
+@accessToken = eyJhbGciOiJIUzM4NCJ9.eyJyb2xlcyI6WyJVU0VSIl0sInRva2VuX3R5cGUiOiJBQ0NFU1MiLCJzdWIiOiJ0YmNhcnVzQHlhbmRleC5ydSIsImlhdCI6MTc3ODYxMDQxNCwiZXhwIjoxNzc4NjExNjE0fQ.hzPEnnJ-I45oM-LsVyZaMJPgEma_lLK3oZi0fVzmbUhcVlfS7As60uJne_CEO8kG
+@refreshToken = eyJhbGciOiJIUzM4NCJ9.eyJyb2xlcyI6WyJVU0VSIl0sInRva2VuX3R5cGUiOiJSRUZSRVNIIiwic3ViIjoidGJjYXJ1c0B5YW5kZXgucnUiLCJpYXQiOjE3Nzg2MDg0MDUsImV4cCI6MTc3OTIxMzIwNX0.xr53m048Q0VJj7AbtDbT1FaKZ5_s4MyUwPyI90b-RSZNHoUrLSDA36640M1VxJ41
 @email = tbcarus@yandex.ru
 @password = pass1
 @confirmationCode = replace-with-registration-code
 @passwordResetCode = 5761d001-0660-4052-9945-b2a83103a692
-@mediaFileId = 1
+@mediaFileId = 4
 @checksum = replace-with-sha256-checksum
 @uploadFile = C:/Users/balashov/Pictures/Снимок1111.JPG
 
@@ -125,9 +125,7 @@ Content-Type: application/json
 }
 
 ### РЕАЛИЗОВАНО - MediaFileController: загрузка одного media-файла
-#Не пускае, говорит, что "message": "Unauthorized: access token expired or invalid". Но там точно действительный токен
-#Это я проверит по тестовому эндпоинту. Так же он всё равно в storage создал файл, но пустой.
-#Так же дальше будет вопрос по наименованиям файлов в storage. Сейчас он сохранил filename + UUID
+#Ожидается 200 OK. При повторной загрузке того же содержимого для того же user вернётся DTO уже существующего файла.
 POST {{baseUrl}}/api/v1/media
 Authorization: Bearer {{accessToken}}
 Content-Type: multipart/form-data; boundary=SmokeBoundary
@@ -137,15 +135,16 @@ Content-Disposition: form-data; name="file"; filename="sample-media.jpg"
 Content-Type: image/jpeg
 
 #File = @{{uploadFile}}
-< C:/Users/balashov/Pictures/Снимок1111.JPG
+< C:/Users/admin/Desktop/Скорости.jpg
 --SmokeBoundary--
 
 ### РЕАЛИЗОВАНО - MediaFileController: список media-файлов с пагинацией и будущими параметрами фильтрации
-#ОК что-то прилетело, но пока база пустая
+#ОК
 GET {{baseUrl}}/api/v1/media?page=0&size=10&type=IMAGE&from=2026-01-01T00:00:00&to=2026-12-31T23:59:59
 Authorization: Bearer {{accessToken}}
 
 ### РЕАЛИЗОВАНО - MediaFileController: получение метаданных media-файла
+#OK
 GET {{baseUrl}}/api/v1/media/{{mediaFileId}}
 Authorization: Bearer {{accessToken}}
 
@@ -159,7 +158,7 @@ Content-Type: application/json
 }
 
 ### РЕАЛИЗОВАНО - MediaFileController: скачивание media-файла
-#Не проверено
+#Ожидается 200 OK и бинарное содержимое файла из physical path, сохранённого в БД.
 GET {{baseUrl}}/api/v1/media/{{mediaFileId}}/download
 Authorization: Bearer {{accessToken}}
 
@@ -168,12 +167,12 @@ GET {{baseUrl}}/api/v1/media/{{mediaFileId}}/thumbnail
 Authorization: Bearer {{accessToken}}
 
 ### РЕАЛИЗОВАНО - MediaFileController: удаление media-файла
-#Не проверено
+#Ожидается 204 No Content. Файл на диске удаляется по storagePath, затем удаляется запись из БД.
 DELETE {{baseUrl}}/api/v1/media/{{mediaFileId}}
 Authorization: Bearer {{accessToken}}
 
 ### РЕАЛИЗОВАНО - MediaFileController: получение checksum'ов текущего пользователя
-#Не проверено
+#Ожидается: originalFilename = имя файла, checksum = SHA-256 файла.
 GET {{baseUrl}}/api/v1/media/checksums
 Authorization: Bearer {{accessToken}}
 

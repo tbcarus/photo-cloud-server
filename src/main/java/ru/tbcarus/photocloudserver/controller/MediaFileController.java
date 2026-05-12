@@ -73,11 +73,11 @@ public class MediaFileController {
     public ResponseEntity<Resource> downloadFile(@PathVariable Long id, @AuthenticationPrincipal User user) throws IOException {
         MediaFile file = mediaFileService.getFileForCurrentUser(id, user);
 
-        Path path = Paths.get(file.getStorageFilename());
+        Path path = Paths.get(file.getStoragePath());
         Resource resource = new UrlResource(path.toUri());
 
         if (!resource.exists() || !resource.isReadable()) {
-            throw new FileNotFoundException(id.toString(), "File not found on disk: " + file.getStorageFilename());
+            throw new FileNotFoundException(id.toString(), "File not found on disk: " + file.getStoragePath());
         }
 
         return ResponseEntity.ok()

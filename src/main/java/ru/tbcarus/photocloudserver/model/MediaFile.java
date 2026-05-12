@@ -22,32 +22,37 @@ public class MediaFile {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(nullable = false)
     private String originalFilename;
 
+    @Column(nullable = false)
     private String storageFilename;
 
     @Column(nullable = false)
     private String storagePath; // путь к файлу на диске
 
-    @Column
+    @Column(nullable = false)
     private String thumbnailPath;
 
+    @Column(nullable = false)
     private String mimeType;
 
+    @Column(nullable = false)
     private Long size;
 
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private MediaType type;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id")
+    @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
     @Column(length = 64, nullable = false)
     private String checksum; // SHA-256 hex string
 
     @CreationTimestamp
-    @Column(updatable = false)
+    @Column(nullable = false, updatable = false)
     private LocalDateTime uploadedAt;
 
     @Column(nullable = false)

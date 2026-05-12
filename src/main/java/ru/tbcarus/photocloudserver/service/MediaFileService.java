@@ -31,6 +31,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -53,14 +54,21 @@ public class MediaFileService {
         }
 
         String mimeType = file.getContentType();
-        if (mimeType == null) {
+        if (mimeType == null || mimeType.isBlank()) {
             throw new IllegalArgumentException("MIME-тип не определён");
         }
 
         byte[] fileBytes = file.getBytes();
         String checksum = FileUtils.calculateSHA256(fileBytes);
+        Optional<MediaFile> duplicate = mediaFileRepository.findByUserIdAndChecksum(user.getId(), checksum);
+        if (duplicate.isPresent()) {
+            return mediaFileMapper.toDto(duplicate.get());
+        }
 
         String originalFilename = file.getOriginalFilename();
+        if (originalFilename == null || originalFilename.isBlank()) {
+            originalFilename = "file";
+        }
         String extension = FilenameUtils.getExtension(originalFilename);
         String storageFilename = originalFilename + "." + UUID.randomUUID() + "." + extension;
 
@@ -68,25 +76,29 @@ public class MediaFileService {
         Files.createDirectories(userDir);
 
         Path destination = userDir.resolve(storageFilename);
+        String storagePath = destination.toAbsolutePath().normalize().toString();
         try (InputStream in = file.getInputStream()) {
             Files.copy(in, destination, StandardCopyOption.REPLACE_EXISTING);
             log.info("File saved: {}", destination.toAbsolutePath());
+
+            MediaFile mediaFile = MediaFile.builder()
+                    .originalFilename(originalFilename)
+                    .storageFilename(storageFilename)
+                    .storagePath(storagePath)
+                    .thumbnailPath("")
+                    .createdAt(LocalDateTime.now())
+                    .mimeType(mimeType)
+                    .size(file.getSize())
+                    .type(MediaType.fromMimeType(mimeType))
+                    .user(user)
+                    .checksum(checksum)
+                    .build();
+
+            return mediaFileMapper.toDto(mediaFileRepository.save(mediaFile));
+        } catch (RuntimeException | IOException ex) {
+            Files.deleteIfExists(destination);
+            throw ex;
         }
-
-        MediaFile mediaFile = MediaFile.builder()
-                .originalFilename(originalFilename)
-                .storageFilename(storageFilename)
-                .storagePath(String.format("/storage/%s/%s", user.getId().toString(), storageFilename))
-                .thumbnailPath(String.format("/storage/%s/%s", user.getId().toString(), storageFilename)) //TODO
-                .createdAt(LocalDateTime.now()) //TODO
-                .mimeType(mimeType)
-                .size(file.getSize())
-                .type(MediaType.fromMimeType(mimeType))
-                .user(user)
-                .checksum(checksum)
-                .build();
-
-        return mediaFileMapper.toDto(mediaFileRepository.save(mediaFile));
     }
 
     public Page<MediaFileDto> getUserFiles(Pageable pageable, User user) {
@@ -105,7 +117,7 @@ public class MediaFileService {
 
     public void deleteFileForCurrentUser(Long fileId, User user) throws IOException {
         MediaFile file = getFileForCurrentUser(fileId, user);
-        Path path = Paths.get(file.getStorageFilename());
+        Path path = Paths.get(file.getStoragePath());
         Files.deleteIfExists(path);
         mediaFileRepository.delete(file);
     }
@@ -121,7 +133,7 @@ public class MediaFileService {
                 .toUriString();
         MediaFileResponse response = mediaFileMapper.toResponse(mediaFile);
         response.setUrl(baseUrl + MEDIA_BASE_PATH + mediaFile.getId() + "/download");
-        response.setThumbnailUrl(mediaFile.getThumbnailPath() != null
+        response.setThumbnailUrl(mediaFile.getThumbnailPath() != null && !mediaFile.getThumbnailPath().isBlank()
                 ? baseUrl + MEDIA_BASE_PATH + mediaFile.getId() + "/thumbnail"
                 : null);
         return response;
