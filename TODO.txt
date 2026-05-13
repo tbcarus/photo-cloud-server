@@ -22,7 +22,7 @@
 +16. Все Id сделать Long. И лучше вынести в какой-нибудь AbstractBaseEntity?
 +17. createDate -> createdAt в EmailRequest (в ликвибейс, мапстракте и т. д.)
 18. полный путь никогда не хранить в БД, а собирать только в сервисе: storageRoot + storagePath. storageRoot из application.yml / env.
-
+19. Метаданные в MediaFileService.uploadFile должны выниматься из файла, а не ставиться заглушки - createdAt(LocalDateTime.now()), thumbnailPath("") (после реализации thumbnail).
 
 
 Хранение файлов (подумать на потом)
