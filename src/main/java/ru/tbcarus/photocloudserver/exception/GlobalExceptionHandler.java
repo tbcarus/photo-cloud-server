@@ -48,6 +48,17 @@ public class GlobalExceptionHandler {
                 );
     }
 
+    @ExceptionHandler(MediaFileNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleMediaFileNotFound(MediaFileNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(
+                        ErrorResponse.builder()
+                                .uuid(UUID.randomUUID())
+                                .message(e.getMessage())
+                                .build()
+                );
+    }
+
     @ExceptionHandler(FileNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleFileNotFound(FileNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)

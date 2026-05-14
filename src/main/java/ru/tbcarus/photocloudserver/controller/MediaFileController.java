@@ -16,7 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import ru.tbcarus.photocloudserver.exception.FileNotFoundException;
+import ru.tbcarus.photocloudserver.exception.MediaFileNotFoundException;
 import ru.tbcarus.photocloudserver.model.MediaFile;
 import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.model.dto.MediaFileChecksumDto;
@@ -77,7 +77,7 @@ public class MediaFileController {
         Resource resource = new UrlResource(path.toUri());
 
         if (!resource.exists() || !resource.isReadable()) {
-            throw new FileNotFoundException(id.toString(), "File not found on disk: " + file.getStoragePath());
+            throw new MediaFileNotFoundException(id);
         }
 
         return ResponseEntity.ok()

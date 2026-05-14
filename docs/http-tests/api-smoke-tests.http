@@ -145,6 +145,7 @@ Authorization: Bearer {{accessToken}}
 
 ### РЕАЛИЗОВАНО - MediaFileController: получение метаданных media-файла
 #OK
+#404 Not Found: foreign media id and missing media id must look the same.
 GET {{baseUrl}}/api/v1/media/{{mediaFileId}}
 Authorization: Bearer {{accessToken}}
 
@@ -159,6 +160,7 @@ Content-Type: application/json
 
 ### РЕАЛИЗОВАНО - MediaFileController: скачивание media-файла
 #Ожидается 200 OK и бинарное содержимое файла из physical path, сохранённого в БД.
+#404 Not Found: foreign media id, missing media id, or missing physical file must return a neutral 404 without storagePath.
 GET {{baseUrl}}/api/v1/media/{{mediaFileId}}/download
 Authorization: Bearer {{accessToken}}
 
@@ -168,6 +170,7 @@ Authorization: Bearer {{accessToken}}
 
 ### РЕАЛИЗОВАНО - MediaFileController: удаление media-файла
 #Ожидается 204 No Content. Файл на диске удаляется по storagePath, затем удаляется запись из БД.
+#404 Not Found: foreign media id and missing media id must look the same.
 DELETE {{baseUrl}}/api/v1/media/{{mediaFileId}}
 Authorization: Bearer {{accessToken}}
 

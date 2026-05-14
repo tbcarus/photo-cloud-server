@@ -17,6 +17,8 @@ public interface MediaFileRepository extends JpaRepository<MediaFile, Long> {
 
     Page<MediaFile> findAllByUserId(Long userId, Pageable pageable);
 
+    Optional<MediaFile> findByIdAndUserId(Long id, Long userId);
+
     Optional<MediaFile> findByUserIdAndChecksum(Long userId, String checksum);
 
     @Query("SELECT new ru.tbcarus.photocloudserver.model.dto.MediaFileChecksumDto(m.originalFilename, m.checksum) " +

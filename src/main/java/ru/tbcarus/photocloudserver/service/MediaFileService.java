@@ -8,7 +8,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-import ru.tbcarus.photocloudserver.exception.EntityNotFoundException;
+import ru.tbcarus.photocloudserver.exception.MediaFileNotFoundException;
 import ru.tbcarus.photocloudserver.controller.MediaFileController;
 import ru.tbcarus.photocloudserver.model.MediaFile;
 import ru.tbcarus.photocloudserver.model.MediaType;
@@ -106,9 +106,8 @@ public class MediaFileService {
     }
 
     public MediaFile getFileForCurrentUser(Long fileId, User user) {
-        return mediaFileRepository.findById(fileId)
-                .filter(file -> file.getUser().getId().equals(user.getId()))
-                .orElseThrow(() -> new EntityNotFoundException(fileId.toString(), String.format("File %d not found", fileId)));
+        return mediaFileRepository.findByIdAndUserId(fileId, user.getId())
+                .orElseThrow(() -> new MediaFileNotFoundException(fileId));
     }
 
     public MediaFileDto getFileDtoForCurrentUser(Long fileId, User user) {
