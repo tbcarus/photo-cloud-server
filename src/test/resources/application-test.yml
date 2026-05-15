@@ -1,0 +1,24 @@
+spring:
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yml
+    enabled: true
+  jpa:
+    show-sql: false
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  mail:
+    host: localhost
+    port: 2525
+    username: test
+    password: test
+    mail-from: test@example.com
+
+token:
+  signing:
+    key: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZg==
+
+logging:
+  level:
+    liquibase: warn
+    ru.tbcarus.photocloudserver: warn
