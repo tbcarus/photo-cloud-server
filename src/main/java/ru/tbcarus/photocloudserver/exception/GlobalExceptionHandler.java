@@ -38,13 +38,57 @@ public class GlobalExceptionHandler {
                 );
     }
 
-    @ExceptionHandler(EntityAlreadyExistException.class)
-    public ResponseEntity<ErrorResponse> handleEntityAlreadyExist(EntityAlreadyExistException e) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidCredentials(InvalidCredentialsException e) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(
                         ErrorResponse.builder()
                                 .uuid(UUID.randomUUID())
-                                .message(e.getMessage())
+                                .message("Invalid email or password")
+                                .build()
+                );
+    }
+
+    @ExceptionHandler(DuplicateEmailException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateEmail(DuplicateEmailException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(
+                        ErrorResponse.builder()
+                                .uuid(UUID.randomUUID())
+                                .message("Email is already registered")
+                                .build()
+                );
+    }
+
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidRefreshToken(InvalidRefreshTokenException e) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(
+                        ErrorResponse.builder()
+                                .uuid(UUID.randomUUID())
+                                .message("Invalid refresh token")
+                                .build()
+                );
+    }
+
+    @ExceptionHandler(RefreshTokenOwnershipException.class)
+    public ResponseEntity<ErrorResponse> handleRefreshTokenOwnership(RefreshTokenOwnershipException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(
+                        ErrorResponse.builder()
+                                .uuid(UUID.randomUUID())
+                                .message("Refresh token does not belong to current user")
+                                .build()
+                );
+    }
+
+    @ExceptionHandler(RefreshTokenNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleRefreshTokenNotFound(RefreshTokenNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(
+                        ErrorResponse.builder()
+                                .uuid(UUID.randomUUID())
+                                .message("Refresh token not found")
                                 .build()
                 );
     }

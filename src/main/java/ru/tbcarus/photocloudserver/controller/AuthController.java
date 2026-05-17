@@ -39,7 +39,7 @@ public class AuthController {
     @PostMapping(LOGOUT_URL)
     public ResponseEntity<Map<String, String>> logout(@Validated @RequestBody LogoutRequest logoutRequest,
                                                       @AuthenticationPrincipal User user) {
-        userService.logout(logoutRequest);
+        userService.logout(logoutRequest, user);
         return ResponseEntity.status(HttpStatus.OK).body(Map.of("message", "Logged out successfully"));
     }
 

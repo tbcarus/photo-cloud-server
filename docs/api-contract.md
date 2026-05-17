@@ -46,10 +46,13 @@
 ```
 
 - Implemented handled mappings:
-  - `400 Bad Request`: `EntityAlreadyExistException`, `EntityNotFoundException`, `IllegalArgumentException`, `TickerRequestException`, bean validation failures
+- `400 Bad Request`: `EntityNotFoundException`, `IllegalArgumentException`, `TickerRequestException`, bean validation failures
+- `401 Unauthorized`: `InvalidCredentialsException`, `InvalidRefreshTokenException`
+- `403 Forbidden`: `TokenRevokedException`, `RefreshTokenOwnershipException`
+- `404 Not Found`: `RefreshTokenNotFoundException`, `MediaFileNotFoundException`, custom `FileNotFoundException`
+- `409 Conflict`: `DuplicateEmailException`
   - `400 Bad Request`: `BadRegistrationRequest`
   - `403 Forbidden`: `TokenRevokedException`
-  - `404 Not Found`: `MediaFileNotFoundException`, custom `FileNotFoundException`
   - `500 Internal Server Error`: `DataIntegrityViolationException` with message `Database constraint violation`
 - `BadRegistrationRequest` is thrown by registration confirmation / password reset code validation paths and is mapped to `400 Bad Request` with the common `ErrorResponse` envelope.
 
@@ -232,8 +235,7 @@ Fields:
 - Errors:
   - `400`:
     - validation error for invalid email / password length
-    - wrong email or wrong password, because `UserService.login` throws `EntityNotFoundException` and the handler maps it to `400`
-  - `401`: not used for bad credentials in current implementation
+  - `401`: wrong email or wrong password (`InvalidCredentialsException`), returned with the same generic error message for both cases
   - `404`: not used
   - `409`: not used
   - `500`: possible only as generic unexpected server failure
@@ -264,8 +266,8 @@ Fields:
 ```
 
 - Errors:
-  - `400`: refresh token not found (`EntityNotFoundException`)
-  - `401`: not used by this controller path
+  - `400`: request validation failure
+  - `401`: unknown, malformed, expired, wrong-token-type, or otherwise invalid refresh token (`InvalidRefreshTokenException`)
   - `403`: refresh token exists but is revoked (`TokenRevokedException`)
   - `404`: not used
   - `409`: not used
@@ -296,16 +298,19 @@ Fields:
 ```
 
 - Errors:
-  - `400`: refresh token not found (`EntityNotFoundException`)
+  - `400`: request validation failure
   - `401`: missing, expired, malformed, invalid, or wrong-token-type bearer token
-  - `404`: not used
+  - `403`: refresh token exists but belongs to another authenticated user (`RefreshTokenOwnershipException`)
+  - `404`: refresh token not found (`RefreshTokenNotFoundException`)
   - `409`: not used
   - `500`: possible only as generic unexpected server failure
 - Java classes:
   - controller method: `AuthController.logout`
   - request DTO: `LogoutRequest`
   - response DTO: inline map
-  - service methods: `UserService.logout`, `JwtService.revoke`
+  - service methods: `UserService.logout`, `JwtService.revokeOwnedToken`, `JwtService.revoke`
+- Ownership rule:
+  - the request refresh token must belong to the authenticated user before it can be revoked
 
 #### `POST /api/v1/auth/logout-all`
 - Authorization: **Yes**
@@ -351,16 +356,19 @@ Fields:
 ```
 
 - Errors:
-  - `400`: not expected from current implementation unless request binding fails
+  - `400`: request validation failure
   - `401`: missing, expired, malformed, invalid, or wrong-token-type bearer token
-  - `404`: not used
+  - `403`: supplied current refresh token belongs to another authenticated user (`RefreshTokenOwnershipException`)
+  - `404`: supplied current refresh token not found (`RefreshTokenNotFoundException`)
   - `409`: not used
   - `500`: possible only as generic unexpected server failure
 - Java classes:
   - controller method: `AuthController.logoutOthers`
   - request DTO: `LogoutRequest`
   - response DTO: inline map
-  - service methods: `UserService.logoutOther`, `JwtService.revokeOther`
+  - service methods: `UserService.logoutOther`, `JwtService.revokeOtherOwnedToken`, `JwtService.revokeOther`
+- Ownership rule:
+  - the supplied current refresh token must belong to the authenticated user before any other sessions are revoked
 
 ### RegisterController
 
@@ -386,10 +394,9 @@ Fields:
 - Errors:
   - `400`:
     - validation failure
-    - duplicate email (`EntityAlreadyExistException`)
+  - `409`: duplicate email (`DuplicateEmailException`)
   - `401`: not applicable; endpoint is public
   - `404`: not used
-  - `409`: not used, even for duplicate email
   - `500`: possible generic failure; email-send failure is logged and swallowed after user creation
 - Java classes:
   - controller method: `RegisterController.register`
@@ -950,22 +957,19 @@ Required for currently implemented flows:
 
 ## Contract issues / questions
 
-1. **Wrong-credential login uses `400`, not `401`.**
-   - Current behavior: `EntityNotFoundException` -> `400 Bad Request`.
-   - Recommendation before client implementation: decide whether bad credentials should be `401 Unauthorized`; this would simplify client semantics and align with common APIs.
+1. **Wrong-credential login uses `401 Unauthorized`.**
+   - Current behavior: unknown email and wrong password both return the same generic `ErrorResponse` message so the API does not reveal which field was wrong.
 
-2. **Duplicate registration uses `400`, not `409`.**
-   - Current behavior: duplicate email -> `EntityAlreadyExistException` -> `400`.
-   - Recommendation: consider `409 Conflict` for duplicate email if the client needs distinct handling.
+2. **Duplicate registration uses `409 Conflict`.**
+   - Current behavior: duplicate email -> `DuplicateEmailException` -> `409`.
 
 3. **Validation error format is intentionally separate from domain/security errors.**
    - Current behavior: bean validation returns a field map, while domain/security errors use `ErrorResponse`.
    - Recommendation: keep this distinction explicit in the client contract unless the API later adopts a richer unified envelope with field errors.
 
-4. **Logout and logout-others accept any refresh token body independent of current access-token user.**
-   - `logout` does not check that the refresh token belongs to the authenticated user.
-   - `logout-others` excludes the supplied refresh token from revocation, but does not verify it belongs to the current user.
-   - Recommendation: bind refresh-token operations to the authenticated principal before client rollout.
+4. **Logout and logout-others are bound to the authenticated principal.**
+   - `logout` rejects a foreign refresh token with `403 Forbidden`.
+   - `logout-others` verifies the supplied current refresh token before revoking other sessions, so a foreign token cannot degrade into an accidental logout-all.
 
 5. **List response exposes raw Spring Data `Page` JSON.**
    - Current contract couples the client to Spring serialization details.

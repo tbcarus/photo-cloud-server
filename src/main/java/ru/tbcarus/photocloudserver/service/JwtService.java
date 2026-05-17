@@ -1,6 +1,7 @@
 package ru.tbcarus.photocloudserver.service;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
@@ -9,6 +10,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import ru.tbcarus.photocloudserver.exception.EntityNotFoundException;
+import ru.tbcarus.photocloudserver.exception.InvalidRefreshTokenException;
+import ru.tbcarus.photocloudserver.exception.RefreshTokenNotFoundException;
+import ru.tbcarus.photocloudserver.exception.RefreshTokenOwnershipException;
 import ru.tbcarus.photocloudserver.exception.TokenRevokedException;
 import ru.tbcarus.photocloudserver.model.RefreshToken;
 import ru.tbcarus.photocloudserver.model.TokenType;
@@ -59,6 +63,7 @@ public class JwtService {
         claims.put(TokenType.TOKEN_TYPE.getValue(), TokenType.REFRESH.getValue());
         String refreshToken = Jwts.builder()
                 .claims(claims)
+                .id(UUID.randomUUID().toString())
                 .subject(user.getUsername())
                 .issuedAt(new Date(System.currentTimeMillis()))
                 .expiration(new Date(System.currentTimeMillis() + refreshExpirationTime))
@@ -81,6 +86,12 @@ public class JwtService {
         refreshTokenRepository.save(refreshToken);
     }
 
+    public void revokeOwnedToken(String token, User user) {
+        RefreshToken refreshToken = getRefreshTokenForLogout(token);
+        assertOwnedBy(refreshToken, user);
+        revoke(token);
+    }
+
     public void revokeAll(User user) {
         List<RefreshToken> list = refreshTokenRepository.findAllByUserNameAndRevoked(user.getUsername(), false);
         if (!list.isEmpty()) {
@@ -96,6 +107,12 @@ public class JwtService {
         }
     }
 
+    public void revokeOtherOwnedToken(String token, User user) {
+        RefreshToken refreshToken = getRefreshTokenForOwnership(token);
+        assertOwnedBy(refreshToken, user);
+        revokeOther(token, user);
+    }
+
     private void revokeList(List<RefreshToken> list) {
         list.forEach(t -> t.setRevoked(true));
         refreshTokenRepository.saveAll(list);
@@ -105,6 +122,7 @@ public class JwtService {
         if (tokenDb.isRevoked()) {
             throw new TokenRevokedException(tokenDb.getToken(), "token revoked");
         }
+        validateRefreshToken(tokenDb);
         return generateAccessToken(user);
     }
 
@@ -143,7 +161,37 @@ public class JwtService {
     }
 
     public RefreshToken getRefreshToken(String token) {
-        return refreshTokenRepository.findByToken(token).orElseThrow(() ->
-                new EntityNotFoundException(token, String.format("Token %s not found", token)));
+        return refreshTokenRepository.findByToken(token).orElseThrow(InvalidRefreshTokenException::new);
+    }
+
+    private RefreshToken getRefreshTokenForLogout(String token) {
+        return refreshTokenRepository.findByToken(token).orElseThrow(RefreshTokenNotFoundException::new);
+    }
+
+    private RefreshToken getRefreshTokenForOwnership(String token) {
+        return refreshTokenRepository.findByToken(token).orElseThrow(RefreshTokenNotFoundException::new);
+    }
+
+    private void assertOwnedBy(RefreshToken refreshToken, User user) {
+        if (!refreshToken.getUserName().equals(user.getUsername())) {
+            throw new RefreshTokenOwnershipException();
+        }
+    }
+
+    private void validateRefreshToken(RefreshToken tokenDb) {
+        try {
+            String token = tokenDb.getToken();
+            if (!TokenType.REFRESH.getValue().equals(extractTokenType(token))) {
+                throw new InvalidRefreshTokenException();
+            }
+            if (isTokenExpired(token)) {
+                throw new InvalidRefreshTokenException();
+            }
+            if (!extractUserName(token).equals(tokenDb.getUserName())) {
+                throw new InvalidRefreshTokenException();
+            }
+        } catch (JwtException | IllegalArgumentException ex) {
+            throw new InvalidRefreshTokenException();
+        }
     }
 }
