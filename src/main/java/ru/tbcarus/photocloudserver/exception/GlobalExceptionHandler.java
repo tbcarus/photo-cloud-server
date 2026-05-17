@@ -8,12 +8,24 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import ru.tbcarus.photocloudserver.exception.dto.ErrorResponse;
 
+import jakarta.validation.ConstraintViolationException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(BadRegistrationRequest.class)
+    public ResponseEntity<ErrorResponse> handleBadRegistrationRequest(BadRegistrationRequest e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(
+                        ErrorResponse.builder()
+                                .uuid(UUID.randomUUID())
+                                .message(e.getErrorType().getTitle())
+                                .build()
+                );
+    }
 
     @ExceptionHandler(TokenRevokedException.class)
     public ResponseEntity<ErrorResponse> handleTokenRevokedException(TokenRevokedException e) {
@@ -87,7 +99,7 @@ public class GlobalExceptionHandler {
                 .body(
                         ErrorResponse.builder()
                                 .uuid(UUID.randomUUID())
-                                .message("Failed to persist media file metadata")
+                                .message("Database constraint violation")
                                 .build()
                 );
     }
@@ -110,6 +122,18 @@ public class GlobalExceptionHandler {
             String fieldName = error.getField();
             String errorMessage = error.getDefaultMessage();
             errors.put(fieldName, errorMessage);
+        });
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(errors);
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<Map<String, String>> handleConstraintViolationException(ConstraintViolationException e) {
+        Map<String, String> errors = new HashMap<>();
+        e.getConstraintViolations().forEach(violation -> {
+            String path = violation.getPropertyPath().toString();
+            String fieldName = path.substring(path.lastIndexOf('.') + 1);
+            errors.put(fieldName, violation.getMessage());
         });
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(errors);

@@ -60,7 +60,7 @@ public class AuthController {
 
     @Operation(summary = "Refresh access token")
     @PostMapping(REFRESH_TOKEN_URL)
-    public ResponseEntity<RefreshResponse> refresh(@RequestBody RefreshRequest refreshRequest) {
+    public ResponseEntity<RefreshResponse> refresh(@Validated @RequestBody RefreshRequest refreshRequest) {
         return ResponseEntity.status(HttpStatus.OK).body(userService.refreshToken(refreshRequest.refreshToken()));
     }
 }

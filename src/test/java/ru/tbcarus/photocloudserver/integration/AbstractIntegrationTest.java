@@ -34,6 +34,7 @@ import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.model.dto.LoginResponse;
 import ru.tbcarus.photocloudserver.model.dto.MediaFileDto;
 import ru.tbcarus.photocloudserver.repository.MediaFileRepository;
+import ru.tbcarus.photocloudserver.repository.EmailRequestRepository;
 import ru.tbcarus.photocloudserver.repository.UserRepository;
 
 import java.io.IOException;
@@ -75,10 +76,13 @@ public abstract class AbstractIntegrationTest {
     protected MediaFileRepository mediaFileRepository;
 
     @Autowired
+    protected EmailRequestRepository emailRequestRepository;
+
+    @Autowired
     protected PasswordEncoder passwordEncoder;
 
     @Autowired
-    private JdbcTemplate jdbcTemplate;
+    protected JdbcTemplate jdbcTemplate;
 
     @DynamicPropertySource
     static void registerProperties(DynamicPropertyRegistry registry) {

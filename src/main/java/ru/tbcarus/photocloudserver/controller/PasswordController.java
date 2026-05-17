@@ -3,14 +3,17 @@ package ru.tbcarus.photocloudserver.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import ru.tbcarus.photocloudserver.service.UserService;
 
 import java.util.Map;
 
 @RestController
+@Validated
 @RequiredArgsConstructor
 @RequestMapping(PasswordController.BASE_URL)
 @Tag(name = "Password management")
@@ -26,15 +29,15 @@ public class PasswordController {
 
     @Operation(summary = "Password reset request")
     @PostMapping(RESET_REQUEST_URL)
-    public ResponseEntity<Map<String, String>> forgotPassword(@RequestParam String email) {
+    public ResponseEntity<Map<String, String>> forgotPassword(@RequestParam @NotBlank(message = "Email must not be blank") String email) {
         userService.forgotPassword(email);
         return ResponseEntity.status(HttpStatus.OK).body(Map.of("message", "Email was sent"));
     }
 
     @Operation(summary = "Password reset confirmation")
     @PostMapping(RESET_CONFIRM_URL)
-    public ResponseEntity<Map<String, String>> resetPassword(@RequestParam String password,
-                                                             @RequestParam String code) {
+    public ResponseEntity<Map<String, String>> resetPassword(@RequestParam @NotBlank(message = "Password must not be blank") String password,
+                                                             @RequestParam @NotBlank(message = "Code must not be blank") String code) {
         userService.resetPassword(password, code);
         return ResponseEntity.status(HttpStatus.OK).body(Map.of("message", "Password was reset"));
     }
