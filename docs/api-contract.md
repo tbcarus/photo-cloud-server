@@ -1,4 +1,4 @@
-﻿# API Contract
+# API Contract
 
 **Source of truth:** current server code in `src/main/java`, plus `docs/api-endpoint-migration.md` where it matches the implementation. This document describes the API as implemented now, not the desired future design.
 
@@ -141,12 +141,10 @@ Fields:
   "enabled": true,
   "banned": false,
   "roles": ["USER"],
-  "createAt": "2026-05-17T10:15:30",
+  "createdAt": "2026-05-17T10:15:30",
   "lastUpdate": "2026-05-17T10:15:30"
 }
 ```
-
-> Note: field name is `createAt`, not `createdAt`, because that is how `UserDto` is declared.
 
 ### `MediaFileDto`
 
@@ -154,7 +152,6 @@ Fields:
 {
   "id": 42,
   "originalFilename": "photo.jpg",
-  "storageFilename": "photo.jpg.550e8400-e29b-41d4-a716-446655440000.jpg",
   "mimeType": "image/jpeg",
   "size": 123456,
   "type": "IMAGE",
@@ -576,7 +573,7 @@ User user@example.com was verified
   "enabled": true,
   "banned": false,
   "roles": ["USER"],
-  "createAt": "2026-05-17T10:15:30",
+  "createdAt": "2026-05-17T10:15:30",
   "lastUpdate": "2026-05-17T10:15:30"
 }
 ```
@@ -649,7 +646,6 @@ User user@example.com was verified
 {
   "id": 42,
   "originalFilename": "photo.jpg",
-  "storageFilename": "photo.jpg.550e8400-e29b-41d4-a716-446655440000.jpg",
   "mimeType": "image/jpeg",
   "size": 123456,
   "type": "IMAGE",
@@ -694,7 +690,6 @@ User user@example.com was verified
     {
       "id": 42,
       "originalFilename": "photo.jpg",
-      "storageFilename": "photo.jpg.550e8400-e29b-41d4-a716-446655440000.jpg",
       "mimeType": "image/jpeg",
       "size": 123456,
       "type": "IMAGE",
@@ -994,21 +989,13 @@ Required for currently implemented flows:
    - Current contract couples the client to Spring serialization details.
    - Recommendation: consider a dedicated page DTO if mobile compatibility / long-term stability matters.
 
-6. **`storageFilename` is exposed to the client.**
-   - It is an internal storage concern and may not be useful to Android.
-   - Recommendation: decide whether the public DTO should expose only client-relevant fields.
-
-7. **`UserDto.createAt` looks like a naming typo.**
-   - Recommendation: decide whether to keep as-is for compatibility or rename before the client ships.
-
-8. **Some docs examples describe future request bodies for not-implemented endpoints that controllers do not currently accept.**
+6. **Some docs examples describe future request bodies for not-implemented endpoints that controllers do not currently accept.**
     - Example: profile update, settings update, checksum-check endpoints.
     - Recommendation: keep future examples clearly marked as non-contractual until DTOs exist.
 
-9. **`MediaFileResponse` exists but is not used by active controller endpoints.**
-    - Current implemented media responses use `MediaFileDto`.
-    - Recommendation: remove or adopt one canonical media response shape before clients multiply.
-
-10. **`docs/api-endpoint-migration.md` is mostly accurate, but it is a migration map, not a full contract.**
+7. **`docs/api-endpoint-migration.md` is mostly accurate, but it is a migration map, not a full contract.**
     - It also mentions future checksum/filter examples that are not implemented in current controllers.
     - Recommendation: treat this file as historical support only; use the present document as the contract source for the client.
+
+
+

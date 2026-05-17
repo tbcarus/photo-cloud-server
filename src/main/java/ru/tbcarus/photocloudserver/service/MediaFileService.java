@@ -9,7 +9,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import ru.tbcarus.photocloudserver.exception.MediaFileNotFoundException;
-import ru.tbcarus.photocloudserver.controller.MediaFileController;
 import ru.tbcarus.photocloudserver.model.MediaFile;
 import ru.tbcarus.photocloudserver.model.MediaType;
 import ru.tbcarus.photocloudserver.model.User;
@@ -18,10 +17,6 @@ import ru.tbcarus.photocloudserver.model.dto.MediaFileDto;
 import ru.tbcarus.photocloudserver.model.dto.mapper.MediaFileMapper;
 import ru.tbcarus.photocloudserver.repository.MediaFileRepository;
 import ru.tbcarus.photocloudserver.util.FileUtils;
-
-import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
-import ru.tbcarus.photocloudserver.model.dto.MediaFileResponse;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -39,8 +34,6 @@ import java.util.UUID;
 @Slf4j
 public class MediaFileService {
     // Stores media files and exposes current media-related business operations.
-
-    private static final String MEDIA_BASE_PATH = MediaFileController.BASE_URL + "/";
 
     private final MediaFileRepository mediaFileRepository;
     private final MediaFileMapper mediaFileMapper;
@@ -123,18 +116,5 @@ public class MediaFileService {
 
     public List<MediaFileChecksumDto> getChecksumsForUser(Long userId) {
         return mediaFileRepository.findAllChecksumsAndOriginalFilenamesByUserId(userId);
-    }
-
-    public MediaFileResponse toResponse(MediaFile mediaFile, HttpServletRequest request) {
-        String baseUrl = ServletUriComponentsBuilder.fromRequestUri(request)
-                .replacePath("")
-                .build()
-                .toUriString();
-        MediaFileResponse response = mediaFileMapper.toResponse(mediaFile);
-        response.setUrl(baseUrl + MEDIA_BASE_PATH + mediaFile.getId() + "/download");
-        response.setThumbnailUrl(mediaFile.getThumbnailPath() != null && !mediaFile.getThumbnailPath().isBlank()
-                ? baseUrl + MEDIA_BASE_PATH + mediaFile.getId() + "/thumbnail"
-                : null);
-        return response;
     }
 }

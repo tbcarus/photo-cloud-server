@@ -13,7 +13,7 @@ public record UserDto(
         boolean enabled,
         boolean banned,
         Set<Role> roles,
-        LocalDateTime createAt,
+        LocalDateTime createdAt,
         LocalDateTime lastUpdate
 ) {
 }

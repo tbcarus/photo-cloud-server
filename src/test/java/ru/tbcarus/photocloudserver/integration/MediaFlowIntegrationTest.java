@@ -40,6 +40,12 @@ class MediaFlowIntegrationTest extends AbstractIntegrationTest {
         assertThat(response.getType()).isEqualTo(MediaType.IMAGE);
         assertThat(response.getChecksum()).isEqualTo(sha256(bytes));
 
+        MvcResult result = perform(get("/api/v1/media/{id}", response.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertThat(result.getResponse().getContentAsString()).doesNotContain("storageFilename");
+
         MediaFile media = findMedia(response.getId());
         Path storedFile = Path.of(media.getStoragePath());
         assertThat(media.getOriginalFilename()).isEqualTo("photo.jpg");

@@ -15,7 +15,6 @@ import java.time.LocalDateTime;
 public class MediaFileDto {
     private Long id;
     private String originalFilename;
-    private String storageFilename;
     private String mimeType;
     private Long size;
     private MediaType type;
