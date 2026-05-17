@@ -21,6 +21,7 @@ import ru.tbcarus.photocloudserver.model.MediaFile;
 import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.model.dto.MediaFileChecksumDto;
 import ru.tbcarus.photocloudserver.model.dto.MediaFileDto;
+import ru.tbcarus.photocloudserver.model.dto.PageResponse;
 import ru.tbcarus.photocloudserver.service.MediaFileService;
 
 import java.io.IOException;
@@ -54,12 +55,21 @@ public class MediaFileController {
 
     @Operation(summary = "Get current user media files")
     @GetMapping
-    public Page<MediaFileDto> getUserFiles(
+    public PageResponse<MediaFileDto> getUserFiles(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @AuthenticationPrincipal User user) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
-        return mediaFileService.getUserFiles(pageable, user);
+        Page<MediaFileDto> mediaFiles = mediaFileService.getUserFiles(pageable, user);
+        return PageResponse.<MediaFileDto>builder()
+                .items(mediaFiles.getContent())
+                .page(mediaFiles.getNumber())
+                .size(mediaFiles.getSize())
+                .totalElements(mediaFiles.getTotalElements())
+                .totalPages(mediaFiles.getTotalPages())
+                .hasNext(mediaFiles.hasNext())
+                .hasPrevious(mediaFiles.hasPrevious())
+                .build();
     }
 
     @Operation(summary = "Get media file metadata")

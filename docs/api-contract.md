@@ -682,11 +682,11 @@ User user@example.com was verified
     - `page: int`, default `0`
     - `size: int`, default `10`
 - Success: `200 OK`
-- Response DTO: Spring Data `Page<MediaFileDto>`
+- Response DTO: `PageResponse<MediaFileDto>`
 
 ```json
 {
-  "content": [
+  "items": [
     {
       "id": 42,
       "originalFilename": "photo.jpg",
@@ -697,16 +697,12 @@ User user@example.com was verified
       "uploadedAt": "2026-05-17T10:15:30"
     }
   ],
-  "pageable": {"...": "Spring Data page metadata"},
+  "page": 0,
+  "size": 10,
   "totalElements": 1,
   "totalPages": 1,
-  "last": true,
-  "size": 10,
-  "number": 0,
-  "sort": {"...": "createdAt desc"},
-  "first": true,
-  "numberOfElements": 1,
-  "empty": false
+  "hasNext": false,
+  "hasPrevious": false
 }
 ```
 
@@ -719,7 +715,7 @@ User user@example.com was verified
 - Java classes:
   - controller method: `MediaFileController.getUserFiles`
   - request DTO: none
-  - response DTO: `Page<MediaFileDto>`
+  - response DTO: `PageResponse<MediaFileDto>`
   - service method: `MediaFileService.getUserFiles`
 
 #### `GET /api/v1/media/{id}`
@@ -890,7 +886,14 @@ Required for currently implemented flows:
 - Generic handled error DTO: `ErrorResponse(uuid, message)`
 - Validation error model: map of field name to message
 - 401 error model: `ErrorResponse(uuid, message)`
-- Spring Data page wrapper for `Page<MediaFileDto>`
+- `PageResponse<MediaFileDto>`
+
+### Pagination migration note for Android
+
+- `GET /api/v1/media` now exposes `PageResponse<MediaFileDto>` instead of the raw Spring Data page shape.
+- Use `items` instead of Spring's `content`.
+- The public pagination contract is limited to `page`, `size`, `totalElements`, `totalPages`, `hasNext`, and `hasPrevious`.
+- Spring internals such as `pageable`, `sort`, `number`, `numberOfElements`, `empty`, `first`, and `last` are not part of the client contract.
 
 ### Required fields for client requests
 

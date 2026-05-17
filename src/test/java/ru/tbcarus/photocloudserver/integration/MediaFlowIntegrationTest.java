@@ -87,9 +87,71 @@ class MediaFlowIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode content = objectMapper.readTree(result.getResponse().getContentAsString()).get("content");
-        List<Long> ids = content.findValues("id").stream().map(JsonNode::asLong).toList();
+        JsonNode items = objectMapper.readTree(result.getResponse().getContentAsString()).get("items");
+        List<Long> ids = items.findValues("id").stream().map(JsonNode::asLong).toList();
         assertThat(ids).containsExactlyInAnyOrder(user1First.getId(), user1Second.getId());
+    }
+
+    @Test
+    void listMediaReturnsStablePaginationFieldsWithoutSpringPageInternals() throws Exception {
+        createUser("user1@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
+        upload(token, "one.jpg", "image/jpeg", "one".getBytes());
+
+        MvcResult result = perform(get("/api/v1/media")
+                        .param("page", "0")
+                        .param("size", "10")
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
+        assertThat(response.has("items")).isTrue();
+        assertThat(response.get("page").asInt()).isZero();
+        assertThat(response.get("size").asInt()).isEqualTo(10);
+        assertThat(response.get("totalElements").asLong()).isEqualTo(1);
+        assertThat(response.get("totalPages").asInt()).isEqualTo(1);
+        assertThat(response.get("hasNext").asBoolean()).isFalse();
+        assertThat(response.get("hasPrevious").asBoolean()).isFalse();
+
+        assertThat(response.has("pageable")).isFalse();
+        assertThat(response.has("sort")).isFalse();
+        assertThat(response.has("number")).isFalse();
+        assertThat(response.has("numberOfElements")).isFalse();
+        assertThat(response.has("empty")).isFalse();
+        assertThat(response.has("first")).isFalse();
+        assertThat(response.has("last")).isFalse();
+    }
+
+    @Test
+    void listMediaReportsNextAndPreviousAcrossPages() throws Exception {
+        createUser("user1@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
+        upload(token, "one.jpg", "image/jpeg", "one".getBytes());
+        upload(token, "two.jpg", "image/jpeg", "two".getBytes());
+        upload(token, "three.jpg", "image/jpeg", "three".getBytes());
+
+        MvcResult firstPageResult = perform(get("/api/v1/media")
+                        .param("page", "0")
+                        .param("size", "2")
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode firstPage = objectMapper.readTree(firstPageResult.getResponse().getContentAsString());
+        assertThat(firstPage.get("hasNext").asBoolean()).isTrue();
+        assertThat(firstPage.get("hasPrevious").asBoolean()).isFalse();
+
+        MvcResult secondPageResult = perform(get("/api/v1/media")
+                        .param("page", "1")
+                        .param("size", "2")
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode secondPage = objectMapper.readTree(secondPageResult.getResponse().getContentAsString());
+        assertThat(secondPage.get("hasNext").asBoolean()).isFalse();
+        assertThat(secondPage.get("hasPrevious").asBoolean()).isTrue();
     }
 
     @Test
