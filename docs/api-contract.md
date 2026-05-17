@@ -117,6 +117,19 @@ Fields:
 - `email: string` — `@NotBlank`, `@Email`
 - `password: string` — required by `@NotBlank`, length `4..20`
 
+### `PasswordResetConfirmRequest`
+
+```json
+{
+  "password": "newPass1",
+  "code": "<password-reset-code>"
+}
+```
+
+Fields:
+- `password: string` — `@NotBlank`, `@Size(min = 4, max = 20)`
+- `code: string` — `@NotBlank`
+
 ### `UserDto`
 
 ```json
@@ -471,12 +484,17 @@ User user@example.com was verified
   - response DTO: inline map
   - service method: `UserService.forgotPassword`
 
-#### `POST /api/v1/auth/password/reset/confirm?password=...&code=...`
+#### `POST /api/v1/auth/password/reset/confirm`
 - Authorization: **No**
 - Request:
-  - query params:
-    - `password: string`
-    - `code: string`
+  - body DTO: `PasswordResetConfirmRequest`
+
+```json
+{
+  "password": "newPass1",
+  "code": "<password-reset-code>"
+}
+```
 - Success: `200 OK`
 - Response DTO: inline map
 
@@ -491,7 +509,7 @@ User user@example.com was verified
   - `409`: not used
 - Java classes:
   - controller method: `PasswordController.resetPassword`
-  - request DTO: none
+  - request DTO: `PasswordResetConfirmRequest`
   - response DTO: inline map
   - service methods: `UserService.resetPassword`, `EmailRequestService.resetPassword`
 
@@ -870,6 +888,7 @@ Required for currently implemented flows:
 - `RefreshResponse(accessToken)`
 - `LogoutRequest(refreshToken)`
 - `RegisterRequest(email, password)`
+- `PasswordResetConfirmRequest(password, code)`
 - `UserDto`
 - `MediaFileDto`
 - `MediaFileChecksumDto`
@@ -895,7 +914,7 @@ Required for currently implemented flows:
 - password reset request
   - query param `email`
 - password reset confirm
-  - query params `password`, `code`
+  - body DTO `PasswordResetConfirmRequest`
 - registration confirm
   - query param `code`
 
@@ -982,18 +1001,14 @@ Required for currently implemented flows:
 7. **`UserDto.createAt` looks like a naming typo.**
    - Recommendation: decide whether to keep as-is for compatibility or rename before the client ships.
 
-8. **Password reset confirmation uses query params for the new password.**
-    - This can leak secrets into logs, browser history, proxies, and observability tooling.
-    - Recommendation: move password reset confirmation to a request body DTO before client implementation.
-
-9. **Some docs examples describe future request bodies for not-implemented endpoints that controllers do not currently accept.**
+8. **Some docs examples describe future request bodies for not-implemented endpoints that controllers do not currently accept.**
     - Example: profile update, settings update, checksum-check endpoints.
     - Recommendation: keep future examples clearly marked as non-contractual until DTOs exist.
 
-10. **`MediaFileResponse` exists but is not used by active controller endpoints.**
+9. **`MediaFileResponse` exists but is not used by active controller endpoints.**
     - Current implemented media responses use `MediaFileDto`.
     - Recommendation: remove or adopt one canonical media response shape before clients multiply.
 
-11. **`docs/api-endpoint-migration.md` is mostly accurate, but it is a migration map, not a full contract.**
+10. **`docs/api-endpoint-migration.md` is mostly accurate, but it is a migration map, not a full contract.**
     - It also mentions future checksum/filter examples that are not implemented in current controllers.
     - Recommendation: treat this file as historical support only; use the present document as the contract source for the client.

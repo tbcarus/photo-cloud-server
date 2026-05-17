@@ -85,7 +85,13 @@ POST {{baseUrl}}/api/v1/auth/password/reset/request?email={{email}}
 
 ### РЕАЛИЗОВАНО - PasswordController: подтверждение сброса пароля
 #OK - убедиться, что при замене пароля ращлогиниваются все логины (все refresh токены отзываются)
-POST {{baseUrl}}/api/v1/auth/password/reset/confirm?password={{password}}&code={{passwordResetCode}}
+POST {{baseUrl}}/api/v1/auth/password/reset/confirm
+Content-Type: application/json
+
+{
+  "password": "{{password}}",
+  "code": "{{passwordResetCode}}"
+}
 
 ### TODO / НЕ РЕАЛИЗОВАНО - PasswordController: повторная отправка ссылки сброса пароля
 POST {{baseUrl}}/api/v1/auth/password/reset/resend

@@ -3,11 +3,13 @@ package ru.tbcarus.photocloudserver.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import ru.tbcarus.photocloudserver.model.dto.PasswordResetConfirmRequest;
 import ru.tbcarus.photocloudserver.service.UserService;
 
 import java.util.Map;
@@ -36,9 +38,8 @@ public class PasswordController {
 
     @Operation(summary = "Password reset confirmation")
     @PostMapping(RESET_CONFIRM_URL)
-    public ResponseEntity<Map<String, String>> resetPassword(@RequestParam @NotBlank(message = "Password must not be blank") String password,
-                                                             @RequestParam @NotBlank(message = "Code must not be blank") String code) {
-        userService.resetPassword(password, code);
+    public ResponseEntity<Map<String, String>> resetPassword(@RequestBody @Valid PasswordResetConfirmRequest request) {
+        userService.resetPassword(request.password(), request.code());
         return ResponseEntity.status(HttpStatus.OK).body(Map.of("message", "Password was reset"));
     }
 

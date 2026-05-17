@@ -151,7 +151,9 @@ curl --location --request POST '{{baseUrl}}/api/v1/auth/password/reset/request?e
 Статус: РЕАЛИЗОВАНО
 
 ```bash
-curl --location --request POST '{{baseUrl}}/api/v1/auth/password/reset/confirm?password=password123&code=<PASSWORD_RESET_CODE>'
+curl --location --request POST '{{baseUrl}}/api/v1/auth/password/reset/confirm' \
+  --header 'Content-Type: application/json' \
+  --data '{"password":"password123","code":"<PASSWORD_RESET_CODE>"}'
 ```
 
 ### Повторная отправка ссылки сброса пароля

@@ -73,8 +73,8 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
     @Test
     void invalidPasswordResetCodeReturnsBadRequestErrorResponse() throws Exception {
         perform(post("/api/v1/auth/password/reset/confirm")
-                        .param("password", PASSWORD)
-                        .param("code", "missing-reset-code"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"%s\",\"code\":\"missing-reset-code\"}".formatted(PASSWORD)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.uuid").isNotEmpty())
                 .andExpect(jsonPath("$.message").isNotEmpty());
@@ -91,11 +91,59 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
     @Test
     void passwordResetConfirmValidationRejectsBlankPasswordAndCode() throws Exception {
         perform(post("/api/v1/auth/password/reset/confirm")
-                        .param("password", "")
-                        .param("code", ""))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"\",\"code\":\"\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.password").value("Password must not be blank"))
+                .andExpect(jsonPath("$.password").exists())
                 .andExpect(jsonPath("$.code").value("Code must not be blank"));
+    }
+
+    @Test
+    void passwordResetConfirmRejectsLegacyQueryParamContract() throws Exception {
+        perform(post("/api/v1/auth/password/reset/confirm")
+                        .param("password", PASSWORD)
+                        .param("code", "reset-code"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void successfulPasswordReset() throws Exception {
+        User user = createUser("password-reset-success@test.local", PASSWORD);
+        String code = "password-reset-success-code";
+        emailRequestRepository.save(EmailRequest.builder()
+                .code(code)
+                .type(EmailRequestType.PASSWORD_RESET)
+                .used(false)
+                .user(user)
+                .build());
+
+        perform(post("/api/v1/auth/password/reset/confirm")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"newPass1\",\"code\":\"%s\"}".formatted(code)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Password was reset"));
+
+        User updatedUser = userRepository.findById(user.getId()).orElseThrow();
+        assertThat(passwordEncoder.matches("newPass1", updatedUser.getPassword())).isTrue();
+        assertThat(emailRequestRepository.findByCode(code).orElseThrow().isUsed()).isTrue();
+    }
+
+    @Test
+    void passwordResetConfirmValidationRejectsTooShortPassword() throws Exception {
+        perform(post("/api/v1/auth/password/reset/confirm")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"abc\",\"code\":\"reset-code\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.password").value("Password length must be from 4 to 20"));
+    }
+
+    @Test
+    void passwordResetConfirmValidationRejectsTooLongPassword() throws Exception {
+        perform(post("/api/v1/auth/password/reset/confirm")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"abcdefghijklmnopqrstu\",\"code\":\"reset-code\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.password").value("Password length must be from 4 to 20"));
     }
 
     @Test
