@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.stereotype.Component;
+import ru.tbcarus.photocloudserver.exception.dto.ErrorCode;
 import ru.tbcarus.photocloudserver.exception.dto.ErrorResponse;
 
 import java.io.IOException;
@@ -24,7 +25,8 @@ public class JsonAccessDeniedHandler implements AccessDeniedHandler {
         response.setStatus(HttpServletResponse.SC_FORBIDDEN); // 403
         response.setContentType("application/json;charset=UTF-8");
         ErrorResponse body = ErrorResponse.builder()
-                .uuid(UUID.randomUUID())
+                .id(UUID.randomUUID())
+                .code(ErrorCode.FORBIDDEN)
                 .message("Forbidden")
                 .build();
         objectMapper.writeValue(response.getWriter(), body);

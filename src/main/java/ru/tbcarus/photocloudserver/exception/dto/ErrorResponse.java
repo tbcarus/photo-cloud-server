@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.Map;
 import java.util.UUID;
 
 @Data
@@ -12,6 +13,8 @@ import java.util.UUID;
 @AllArgsConstructor
 @NoArgsConstructor
 public class ErrorResponse {
-    private UUID uuid;
+    private UUID id;
+    private ErrorCode code;
     private String message;
+    private Map<String, String> fieldErrors;
 }

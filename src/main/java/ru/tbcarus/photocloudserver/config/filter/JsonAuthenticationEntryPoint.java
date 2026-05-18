@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.stereotype.Component;
+import ru.tbcarus.photocloudserver.exception.dto.ErrorCode;
 import ru.tbcarus.photocloudserver.exception.dto.ErrorResponse;
 
 import java.io.IOException;
@@ -24,7 +25,8 @@ public class JsonAuthenticationEntryPoint implements AuthenticationEntryPoint {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED); // 401
         response.setContentType("application/json;charset=UTF-8");
         ErrorResponse body = ErrorResponse.builder()
-                .uuid(UUID.randomUUID())
+                .id(UUID.randomUUID())
+                .code(ErrorCode.UNAUTHORIZED)
                 .message("Unauthorized: access token expired or invalid")
                 .build();
         objectMapper.writeValue(response.getWriter(), body);

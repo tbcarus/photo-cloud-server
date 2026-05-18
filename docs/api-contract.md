@@ -13,8 +13,10 @@
 
 ```json
 {
-  "uuid": "2e7f5f91-9a9f-4e5d-b5b9-1fb1c72df9ea",
-  "message": "Unauthorized: access token expired or invalid"
+  "id": "2e7f5f91-9a9f-4e5d-b5b9-1fb1c72df9ea",
+  "code": "UNAUTHORIZED",
+  "message": "Unauthorized: access token expired or invalid",
+  "fieldErrors": null
 }
 ```
 
@@ -22,8 +24,10 @@
 
 ```json
 {
-  "uuid": "2e7f5f91-9a9f-4e5d-b5b9-1fb1c72df9ea",
-  "message": "Forbidden"
+  "id": "2e7f5f91-9a9f-4e5d-b5b9-1fb1c72df9ea",
+  "code": "FORBIDDEN",
+  "message": "Forbidden",
+  "fieldErrors": null
 }
 ```
 
@@ -31,28 +35,35 @@
 
 ```json
 {
-  "uuid": "2e7f5f91-9a9f-4e5d-b5b9-1fb1c72df9ea",
-  "message": "..."
+  "id": "2e7f5f91-9a9f-4e5d-b5b9-1fb1c72df9ea",
+  "code": "ERROR_CODE",
+  "message": "...",
+  "fieldErrors": null
 }
 ```
 
-- Validation errors from `MethodArgumentNotValidException` use a different shape:
+- Validation errors from `MethodArgumentNotValidException` and `ConstraintViolationException` use the same envelope and populate `fieldErrors`:
 
 ```json
 {
-  "email": "Must be e-mail",
-  "password": "Password length must be from 4 to 20"
+  "id": "2e7f5f91-9a9f-4e5d-b5b9-1fb1c72df9ea",
+  "code": "VALIDATION_ERROR",
+  "message": "Validation failed",
+  "fieldErrors": {
+    "email": "Must be e-mail",
+    "password": "Password length must be from 4 to 20"
+  }
 }
 ```
 
 - Implemented handled mappings:
-  - `400 Bad Request`: validation failures, `BadRegistrationRequest`, `EntityNotFoundException`, `IllegalArgumentException`, `TickerRequestException`
+  - `400 Bad Request`: validation failures, malformed or missing request bodies, missing required request params, `BadRegistrationRequest`, `EntityNotFoundException`, `IllegalArgumentException`, `TickerRequestException`
   - `401 Unauthorized`: authentication failures such as `InvalidCredentialsException` and `InvalidRefreshTokenException`
   - `403 Forbidden`: forbidden operations such as `TokenRevokedException` and `RefreshTokenOwnershipException`
   - `404 Not Found`: missing resources such as `RefreshTokenNotFoundException`, `MediaFileNotFoundException`, and custom `FileNotFoundException`
   - `409 Conflict`: `DuplicateEmailException`
   - `500 Internal Server Error`: `DataIntegrityViolationException` with message `Database constraint violation`
-- `BadRegistrationRequest` is thrown by registration confirmation / password reset code validation paths and is mapped to `400 Bad Request` with the common `ErrorResponse` envelope.
+- `BadRegistrationRequest` is thrown by registration confirmation / password reset code validation paths and is mapped to `400 Bad Request` with the common error envelope.
 
 ## DTO reference
 
@@ -881,9 +892,7 @@ Required for currently implemented flows:
 - `UserDto`
 - `MediaFileDto`
 - `MediaFileChecksumDto`
-- Generic handled error DTO: `ErrorResponse(uuid, message)`
-- Validation error model: map of field name to message
-- 401 error model: `ErrorResponse(uuid, message)`
+- Unified error DTO: `ApiErrorResponse(id, code, message, fieldErrors)`
 - `PageResponse<MediaFileDto>`
 
 ### Pagination migration note for Android
@@ -958,7 +967,7 @@ Required for currently implemented flows:
   - missing or invalid access token on protected endpoints
   - invalid login credentials
   - invalid refresh token
-  - body shape: `ErrorResponse(uuid, message)`
+  - body shape: `ApiErrorResponse(id, code, message, fieldErrors)`
 - `403`
   - forbidden operations, including revoked refresh tokens and foreign refresh-token ownership
 - `404`
@@ -976,8 +985,9 @@ Required for currently implemented flows:
 
 ## Contract notes
 
-1. **Validation error format is intentionally separate from domain/security errors.**
-   - Bean validation returns a field map, while domain/security errors use `ErrorResponse`.
+1. **All API errors use the same envelope.**
+   - Bean validation, domain errors, and security errors all return `ApiErrorResponse(id, code, message, fieldErrors)`.
+   - `fieldErrors` is populated only for validation failures and is `null` for non-validation errors.
 
 2. **Logout and logout-others are bound to the authenticated principal.**
    - `logout` rejects a foreign refresh token with `403 Forbidden`.

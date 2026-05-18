@@ -27,7 +27,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
     void invalidRegistrationCodeReturnsBadRequestErrorResponse() throws Exception {
         perform(get("/api/v1/auth/register/confirm").param("code", "missing-code"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.uuid").isNotEmpty())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("BAD_REGISTRATION_REQUEST"))
+                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.message").isNotEmpty());
     }
 
@@ -44,7 +46,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
 
         perform(get("/api/v1/auth/register/confirm").param("code", code))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.uuid").isNotEmpty())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("BAD_REGISTRATION_REQUEST"))
+                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.message").isNotEmpty());
     }
 
@@ -66,7 +70,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
 
         perform(get("/api/v1/auth/register/confirm").param("code", code))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.uuid").isNotEmpty())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("BAD_REGISTRATION_REQUEST"))
+                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.message").isNotEmpty());
     }
 
@@ -76,7 +82,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"password\":\"%s\",\"code\":\"missing-reset-code\"}".formatted(PASSWORD)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.uuid").isNotEmpty())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("BAD_REGISTRATION_REQUEST"))
+                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.message").isNotEmpty());
     }
 
@@ -85,7 +93,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
         perform(post("/api/v1/auth/password/reset/request")
                         .param("email", ""))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.email").value("Email must not be blank"));
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("Validation failed"))
+                .andExpect(jsonPath("$.fieldErrors.email").value("Email must not be blank"));
     }
 
     @Test
@@ -94,8 +104,10 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"password\":\"\",\"code\":\"\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.password").exists())
-                .andExpect(jsonPath("$.code").value("Code must not be blank"));
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("Validation failed"))
+                .andExpect(jsonPath("$.fieldErrors.password").exists())
+                .andExpect(jsonPath("$.fieldErrors.code").value("Code must not be blank"));
     }
 
     @Test
@@ -103,7 +115,11 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
         perform(post("/api/v1/auth/password/reset/confirm")
                         .param("password", PASSWORD)
                         .param("code", "reset-code"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
+                .andExpect(jsonPath("$.message").value("Malformed or missing request body"))
+                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()));
     }
 
     @Test
@@ -134,7 +150,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"password\":\"abc\",\"code\":\"reset-code\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.password").value("Password length must be from 4 to 20"));
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("Validation failed"))
+                .andExpect(jsonPath("$.fieldErrors.password").value("Password length must be from 4 to 20"));
     }
 
     @Test
@@ -143,7 +161,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"password\":\"abcdefghijklmnopqrstu\",\"code\":\"reset-code\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.password").value("Password length must be from 4 to 20"));
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("Validation failed"))
+                .andExpect(jsonPath("$.fieldErrors.password").value("Password length must be from 4 to 20"));
     }
 
     @Test
@@ -160,7 +180,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"missing@test.local\",\"password\":\"pass1\"}"))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.uuid").isNotEmpty())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
+                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.message").value("Invalid email or password"));
     }
 
@@ -172,7 +194,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"wrong-password@test.local\",\"password\":\"wrong\"}"))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.uuid").isNotEmpty())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
+                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.message").value("Invalid email or password"));
     }
 
@@ -192,7 +216,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"duplicate@test.local\",\"password\":\"pass1\"}"))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.uuid").isNotEmpty())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.message").value("Email is already registered"));
     }
 
@@ -207,7 +233,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"refreshToken\":\"unknown-token\"}"))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.uuid").isNotEmpty())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("INVALID_REFRESH_TOKEN"))
+                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.message").value("Invalid refresh token"));
     }
 
@@ -221,7 +249,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"refreshToken\":\"%s\"}".formatted(tokens.refreshToken())))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.uuid").isNotEmpty())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("REFRESH_TOKEN_REVOKED"))
+                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.message").value("token revoked"));
     }
 
@@ -235,7 +265,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"refreshToken\":\"\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.refreshToken").value("Refresh token must not be blank"));
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("Validation failed"))
+                .andExpect(jsonPath("$.fieldErrors.refreshToken").value("Refresh token must not be blank"));
     }
 
     @Test
@@ -250,7 +282,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"refreshToken\":\"%s\"}".formatted(foreignTokens.refreshToken())))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.uuid").isNotEmpty())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("REFRESH_TOKEN_OWNERSHIP_ERROR"))
+                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.message").value("Refresh token does not belong to current user"));
 
         assertThat(findRefreshToken(foreignTokens.refreshToken()).isRevoked()).isFalse();
@@ -266,7 +300,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"refreshToken\":\"unknown-token\"}"))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.uuid").isNotEmpty())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("REFRESH_TOKEN_NOT_FOUND"))
+                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.message").value("Refresh token not found"));
     }
 
@@ -297,7 +333,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"refreshToken\":\"%s\"}".formatted(foreignTokens.refreshToken())))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.uuid").isNotEmpty())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("REFRESH_TOKEN_OWNERSHIP_ERROR"))
+                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.message").value("Refresh token does not belong to current user"));
 
         assertThat(findRefreshToken(ownerCurrentTokens.refreshToken()).isRevoked()).isFalse();
@@ -314,7 +352,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"refreshToken\":\"unknown-token\"}"))
                 .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.uuid").isNotEmpty())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("REFRESH_TOKEN_NOT_FOUND"))
+                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.message").value("Refresh token not found"));
     }
 
@@ -338,7 +378,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
     void protectedEndpointWithoutTokenReturnsUnauthorizedErrorResponse() throws Exception {
         perform(get("/api/v1/media"))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.uuid").isNotEmpty())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.message").value("Unauthorized: access token expired or invalid"));
     }
 
@@ -347,7 +389,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
         perform(get("/api/v1/media")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer invalid.jwt.token"))
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.uuid").isNotEmpty())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.message").value("Unauthorized: access token expired or invalid"));
     }
 
@@ -359,7 +403,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                 .andReturn();
 
         JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
-        assertThat(response.get(field).asText()).isEqualTo(expectedMessage);
+        assertThat(response.get("code").asText()).isEqualTo("VALIDATION_ERROR");
+        assertThat(response.get("message").asText()).isEqualTo("Validation failed");
+        assertThat(response.get("fieldErrors").get(field).asText()).isEqualTo(expectedMessage);
     }
 
     private void assertValidationFieldExists(String path, String body, String field) throws Exception {
@@ -370,7 +416,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                 .andReturn();
 
         JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
-        assertThat(response.has(field)).isTrue();
+        assertThat(response.get("code").asText()).isEqualTo("VALIDATION_ERROR");
+        assertThat(response.get("message").asText()).isEqualTo("Validation failed");
+        assertThat(response.get("fieldErrors").has(field)).isTrue();
     }
 
     private LoginResponse login(String email, String password) throws Exception {

@@ -250,7 +250,11 @@ class MediaFlowIntegrationTest extends AbstractIntegrationTest {
 
         perform(delete("/api/v1/media/{id}", 999999L)
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isNotFound())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.id").isNotEmpty())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("MEDIA_FILE_NOT_FOUND"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.message").isNotEmpty())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()));
     }
 
     @Test
