@@ -52,6 +52,7 @@ curl --location '{{baseUrl}}/api/v1/auth/register/confirm?code=<CONFIRMATION_COD
 
 ### Повторная отправка подтверждения регистрации
 Статус: TODO / НЕ РЕАЛИЗОВАНО
+Not implemented yet — example of future API.
 
 ```bash
 curl --location --request POST '{{baseUrl}}/api/v1/auth/register/resend'
@@ -158,6 +159,7 @@ curl --location --request POST '{{baseUrl}}/api/v1/auth/password/reset/confirm' 
 
 ### Повторная отправка ссылки сброса пароля
 Статус: TODO / НЕ РЕАЛИЗОВАНО
+Not implemented yet — example of future API.
 
 ```bash
 curl --location --request POST '{{baseUrl}}/api/v1/auth/password/reset/resend'
@@ -165,6 +167,7 @@ curl --location --request POST '{{baseUrl}}/api/v1/auth/password/reset/resend'
 
 ### HTML-страница сброса пароля
 Статус: TODO / НЕ РЕАЛИЗОВАНО
+Not implemented yet — example of future API.
 
 ```bash
 curl --location '{{baseUrl}}/api/v1/auth/password/reset/page?code=<PASSWORD_RESET_CODE>'
@@ -172,6 +175,7 @@ curl --location '{{baseUrl}}/api/v1/auth/password/reset/page?code=<PASSWORD_RESE
 
 ### Отправка формы HTML-страницы сброса пароля
 Статус: TODO / НЕ РЕАЛИЗОВАНО
+Not implemented yet — example of future API.
 
 ```bash
 curl --location --request POST '{{baseUrl}}/api/v1/auth/password/reset/page'
@@ -189,6 +193,7 @@ curl --location '{{baseUrl}}/api/v1/profile' \
 
 ### Обновление профиля текущего пользователя
 Статус: TODO / НЕ РЕАЛИЗОВАНО
+Not implemented yet — example of future API.
 
 Тело запроса:
 
@@ -208,6 +213,7 @@ curl --location --request PATCH '{{baseUrl}}/api/v1/profile' \
 
 ### Получение настроек профиля
 Статус: TODO / НЕ РЕАЛИЗОВАНО
+Not implemented yet — example of future API.
 
 ```bash
 curl --location '{{baseUrl}}/api/v1/profile/settings' \
@@ -216,6 +222,7 @@ curl --location '{{baseUrl}}/api/v1/profile/settings' \
 
 ### Обновление настроек профиля
 Статус: TODO / НЕ РЕАЛИЗОВАНО
+Not implemented yet — example of future API.
 
 Тело запроса:
 
@@ -251,7 +258,7 @@ curl --location '{{baseUrl}}/api/v1/media' \
 Текущий контроллер принимает `page` и `size`. `type`, `from` и `to` добавлены в пример как будущие параметры фильтрации и могут игнорироваться сервером до реализации фильтров.
 
 ```bash
-curl --location '{{baseUrl}}/api/v1/media?page=0&size=10&type=IMAGE&from=2026-01-01T00:00:00&to=2026-12-31T23:59:59' \
+curl --location '{{baseUrl}}/api/v1/media?page=0&size=10' \
   --header 'Authorization: Bearer {{accessToken}}'
 ```
 
@@ -265,6 +272,7 @@ curl --location '{{baseUrl}}/api/v1/media/1' \
 
 ### Обновление метаданных media-файла
 Статус: TODO / НЕ РЕАЛИЗОВАНО
+Not implemented yet — example of future API.
 
 Тело запроса:
 
@@ -292,6 +300,7 @@ curl --location '{{baseUrl}}/api/v1/media/1/download' \
 
 ### Получение thumbnail media-файла
 Статус: TODO / НЕ РЕАЛИЗОВАНО
+Not implemented yet — example of future API.
 
 ```bash
 curl --location '{{baseUrl}}/api/v1/media/1/thumbnail' \
@@ -316,6 +325,7 @@ curl --location '{{baseUrl}}/api/v1/media/checksums' \
 
 ### Проверка одного checksum
 Статус: TODO / НЕ РЕАЛИЗОВАНО
+Not implemented yet — example of future API.
 
 Тело запроса:
 
@@ -334,6 +344,7 @@ curl --location '{{baseUrl}}/api/v1/media/check-exist' \
 
 ### Batch-проверка checksum'ов
 Статус: TODO / НЕ РЕАЛИЗОВАНО
+Not implemented yet — example of future API.
 
 Тело запроса:
 

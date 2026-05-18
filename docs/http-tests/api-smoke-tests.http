@@ -144,9 +144,10 @@ Content-Type: image/jpeg
 < C:/Users/admin/Desktop/Скорости.jpg
 --SmokeBoundary--
 
-### РЕАЛИЗОВАНО - MediaFileController: список media-файлов с пагинацией и будущими параметрами фильтрации
+### IMPLEMENTED - MediaFileController: paginated media list
 #ОК
-GET {{baseUrl}}/api/v1/media?page=0&size=10&type=IMAGE&from=2026-01-01T00:00:00&to=2026-12-31T23:59:59
+# Response: PageResponse<MediaFileDto> (items, page, size, totalElements, totalPages, hasNext, hasPrevious)
+GET {{baseUrl}}/api/v1/media?page=0&size=10
 Authorization: Bearer {{accessToken}}
 
 ### РЕАЛИЗОВАНО - MediaFileController: получение метаданных media-файла

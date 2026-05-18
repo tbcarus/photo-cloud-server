@@ -46,13 +46,11 @@
 ```
 
 - Implemented handled mappings:
-- `400 Bad Request`: `EntityNotFoundException`, `IllegalArgumentException`, `TickerRequestException`, bean validation failures
-- `401 Unauthorized`: `InvalidCredentialsException`, `InvalidRefreshTokenException`
-- `403 Forbidden`: `TokenRevokedException`, `RefreshTokenOwnershipException`
-- `404 Not Found`: `RefreshTokenNotFoundException`, `MediaFileNotFoundException`, custom `FileNotFoundException`
-- `409 Conflict`: `DuplicateEmailException`
-  - `400 Bad Request`: `BadRegistrationRequest`
-  - `403 Forbidden`: `TokenRevokedException`
+  - `400 Bad Request`: validation failures, `BadRegistrationRequest`, `EntityNotFoundException`, `IllegalArgumentException`, `TickerRequestException`
+  - `401 Unauthorized`: authentication failures such as `InvalidCredentialsException` and `InvalidRefreshTokenException`
+  - `403 Forbidden`: forbidden operations such as `TokenRevokedException` and `RefreshTokenOwnershipException`
+  - `404 Not Found`: missing resources such as `RefreshTokenNotFoundException`, `MediaFileNotFoundException`, and custom `FileNotFoundException`
+  - `409 Conflict`: `DuplicateEmailException`
   - `500 Internal Server Error`: `DataIntegrityViolationException` with message `Database constraint violation`
 - `BadRegistrationRequest` is thrown by registration confirmation / password reset code validation paths and is mapped to `400 Bad Request` with the common `ErrorResponse` envelope.
 
@@ -954,51 +952,40 @@ Required for currently implemented flows:
 ### Errors the client should handle
 
 - `400`
-  - validation map for DTO validation failures
-  - structured `ErrorResponse` for many domain failures
-  - login failure currently arrives here, not as `401`
-  - missing refresh token in DB also arrives here
+  - validation failures
+  - bad-request domain errors
 - `401`
-  - any protected endpoint without a valid access token
-  - body shape differs from `ErrorResponse`
+  - missing or invalid access token on protected endpoints
+  - invalid login credentials
+  - invalid refresh token
+  - body shape: `ErrorResponse(uuid, message)`
 - `403`
-  - revoked refresh token during refresh
+  - forbidden operations, including revoked refresh tokens and foreign refresh-token ownership
 - `404`
+  - missing resources, including unknown refresh tokens in logout flows
   - media metadata / download / delete for missing media
   - the same `404` is returned for someone else’s media file; the client cannot distinguish foreign vs nonexistent media
+- `409`
+  - duplicate registration email
 - `501`
   - reserved TODO endpoints
 - `500`
   - generic unexpected failure
   - metadata persistence failure during upload
 
-## Contract issues / questions
 
-1. **Wrong-credential login uses `401 Unauthorized`.**
-   - Current behavior: unknown email and wrong password both return the same generic `ErrorResponse` message so the API does not reveal which field was wrong.
+## Contract notes
 
-2. **Duplicate registration uses `409 Conflict`.**
-   - Current behavior: duplicate email -> `DuplicateEmailException` -> `409`.
+1. **Validation error format is intentionally separate from domain/security errors.**
+   - Bean validation returns a field map, while domain/security errors use `ErrorResponse`.
 
-3. **Validation error format is intentionally separate from domain/security errors.**
-   - Current behavior: bean validation returns a field map, while domain/security errors use `ErrorResponse`.
-   - Recommendation: keep this distinction explicit in the client contract unless the API later adopts a richer unified envelope with field errors.
-
-4. **Logout and logout-others are bound to the authenticated principal.**
+2. **Logout and logout-others are bound to the authenticated principal.**
    - `logout` rejects a foreign refresh token with `403 Forbidden`.
    - `logout-others` verifies the supplied current refresh token before revoking other sessions, so a foreign token cannot degrade into an accidental logout-all.
 
-5. **List response exposes raw Spring Data `Page` JSON.**
-   - Current contract couples the client to Spring serialization details.
-   - Recommendation: consider a dedicated page DTO if mobile compatibility / long-term stability matters.
+3. **Examples for not-implemented endpoints are non-contractual.**
+   - Profile update, settings update, and checksum-check examples describe future API shape only until DTOs exist in controllers.
 
-6. **Some docs examples describe future request bodies for not-implemented endpoints that controllers do not currently accept.**
-    - Example: profile update, settings update, checksum-check endpoints.
-    - Recommendation: keep future examples clearly marked as non-contractual until DTOs exist.
-
-7. **`docs/api-endpoint-migration.md` is mostly accurate, but it is a migration map, not a full contract.**
-    - It also mentions future checksum/filter examples that are not implemented in current controllers.
-    - Recommendation: treat this file as historical support only; use the present document as the contract source for the client.
-
-
+4. **`docs/api-endpoint-migration.md` is a migration map, not the current contract.**
+   - Use this document as the source of truth for the present client contract.
 
