@@ -14,7 +14,7 @@ class ProfileIntegrationTest extends AbstractIntegrationTest {
     private static final String PASSWORD = "pass1";
 
     @Test
-    void profileUsesCreatedAtFieldName() throws Exception {
+    void profileUsesCurrentUserFields() throws Exception {
         createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
 
@@ -26,5 +26,10 @@ class ProfileIntegrationTest extends AbstractIntegrationTest {
         JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
         assertThat(response.has("createdAt")).isTrue();
         assertThat(response.has("createAt")).isFalse();
+        assertThat(response.get("displayName").asText()).isEqualTo("Test User");
+        assertThat(response.has("lastLoginAt")).isTrue();
+        assertThat(response.get("lastLoginAt").isNull()).isFalse();
+        assertThat(response.has("firstName")).isFalse();
+        assertThat(response.has("lastName")).isFalse();
     }
 }

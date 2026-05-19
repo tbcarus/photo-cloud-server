@@ -8,12 +8,12 @@ import java.util.Set;
 public record UserDto(
         Long id,
         String email,
-        String firstName,
-        String lastName,
+        String displayName,
         boolean enabled,
         boolean banned,
         Set<Role> roles,
         LocalDateTime createdAt,
-        LocalDateTime lastUpdate
+        LocalDateTime lastUpdate,
+        LocalDateTime lastLoginAt
 ) {
 }

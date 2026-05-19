@@ -17,6 +17,7 @@ import ru.tbcarus.photocloudserver.model.dto.*;
 import ru.tbcarus.photocloudserver.model.dto.mapper.UserRegisterMapper;
 import ru.tbcarus.photocloudserver.repository.UserRepository;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.Set;
 
@@ -78,6 +79,11 @@ public class UserService implements UserDetailsService {
         if (!passwordEncoder.matches(loginRequest.password(), user.getPassword())) {
             throw new InvalidCredentialsException();
         }
+        if (!user.isEnabled() || user.isBanned()) {
+            throw new InvalidCredentialsException();
+        }
+        user.setLastLoginAt(LocalDateTime.now());
+        userRepository.save(user);
         String accessToken = jwtService.generateAccessToken(user);
         String refreshToken = jwtService.generateRefreshToken(user);
         return new LoginResponse(accessToken, refreshToken);

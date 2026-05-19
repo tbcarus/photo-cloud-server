@@ -113,8 +113,7 @@ Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
-  "firstName": "Smoke",
-  "lastName": "Tester"
+  "displayName": "Smoke Tester"
 }
 
 ### TODO / НЕ РЕАЛИЗОВАНО - UserController: получение настроек профиля

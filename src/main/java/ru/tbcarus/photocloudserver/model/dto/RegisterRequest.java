@@ -14,12 +14,8 @@ public record RegisterRequest(
 //        @Pattern(regexp = "^(?=.*[A-Z])(?=.*[a-z])(?=.*\\d)(?=.*[@#$%^&+=!]).*$")
         String password
 //        ,
-//        @NotBlank(message = "Firstname can not be blank")
-//        @Size(min = 1, max = 20, message = "FirstName length must be from 1 to 20")
-//        String firstName,
-//        @NotBlank(message = "Lastname can not be blank")
-//        @Size(min = 1, max = 20, message = "LastName length must be from 1 to 20")
-//        String lastName
+//        @Size(max = 128, message = "Display name length must be up to 128")
+//        String displayName
 ) {
 
 }

@@ -72,7 +72,8 @@ public class EmailService {
         }
 
         Map<String, Object> map = new HashMap<>();
-        map.put("name", emailRequest.getUser().getFirstName());
+        String displayName = emailRequest.getUser().getDisplayName();
+        map.put("name", displayName != null ? displayName : emailRequest.getUser().getEmail());
         map.put("emailRequest", emailRequest);
         ServletRequestAttributes servletRequestAttributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         HttpServletRequest request = Objects.requireNonNull(servletRequestAttributes).getRequest();

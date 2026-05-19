@@ -199,8 +199,7 @@ Not implemented yet — example of future API.
 
 ```json
 {
-  "firstName": "Smoke",
-  "lastName": "Tester"
+  "displayName": "Smoke Tester"
 }
 ```
 
@@ -208,7 +207,7 @@ Not implemented yet — example of future API.
 curl --location --request PATCH '{{baseUrl}}/api/v1/profile' \
   --header 'Authorization: Bearer {{accessToken}}' \
   --header 'Content-Type: application/json' \
-  --data '{"firstName":"Smoke","lastName":"Tester"}'
+  --data '{"displayName":"Smoke Tester"}'
 ```
 
 ### Получение настроек профиля

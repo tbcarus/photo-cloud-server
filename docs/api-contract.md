@@ -145,13 +145,13 @@ Fields:
 {
   "id": 1,
   "email": "user@example.com",
-  "firstName": null,
-  "lastName": null,
+  "displayName": null,
   "enabled": true,
   "banned": false,
   "roles": ["USER"],
   "createdAt": "2026-05-17T10:15:30",
-  "lastUpdate": "2026-05-17T10:15:30"
+  "lastUpdate": "2026-05-17T10:15:30",
+  "lastLoginAt": "2026-05-17T10:15:30"
 }
 ```
 
@@ -254,7 +254,7 @@ Fields:
 - Errors:
   - `400`:
     - validation error for invalid email / password length
-  - `401`: wrong email or wrong password (`InvalidCredentialsException`), returned with the same generic error message for both cases
+  - `401`: wrong email, wrong password, disabled account, or banned account (`InvalidCredentialsException`), returned with the same generic error message for all cases
   - `404`: not used
   - `409`: not used
   - `500`: possible only as generic unexpected server failure
@@ -577,13 +577,13 @@ User user@example.com was verified
 {
   "id": 1,
   "email": "user@example.com",
-  "firstName": null,
-  "lastName": null,
+  "displayName": null,
   "enabled": true,
   "banned": false,
   "roles": ["USER"],
   "createdAt": "2026-05-17T10:15:30",
-  "lastUpdate": "2026-05-17T10:15:30"
+  "lastUpdate": "2026-05-17T10:15:30",
+  "lastLoginAt": "2026-05-17T10:15:30"
 }
 ```
 

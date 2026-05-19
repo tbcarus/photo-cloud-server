@@ -28,8 +28,7 @@ public class User implements UserDetails {
 
     private String email;
     private String password;
-    private String firstName;
-    private String lastName;
+    private String displayName;
     private boolean enabled;
     private boolean banned;
 
@@ -45,6 +44,8 @@ public class User implements UserDetails {
     @UpdateTimestamp
     private LocalDateTime lastUpdate;
 
+    private LocalDateTime lastLoginAt;
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return roles
@@ -56,5 +57,15 @@ public class User implements UserDetails {
     @Override
     public String getUsername() {
         return email;
+    }
+
+    @Override
+    public boolean isAccountNonLocked() {
+        return !banned;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return enabled;
     }
 }

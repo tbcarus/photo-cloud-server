@@ -201,6 +201,41 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void bannedUserCannotLogin() throws Exception {
+        createUser("banned@test.local", PASSWORD, true, true);
+
+        perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"banned@test.local\",\"password\":\"pass1\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
+                .andExpect(jsonPath("$.message").value("Invalid email or password"));
+    }
+
+    @Test
+    void disabledUserCannotLogin() throws Exception {
+        createUser("disabled@test.local", PASSWORD, false, false);
+
+        perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"disabled@test.local\",\"password\":\"pass1\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
+                .andExpect(jsonPath("$.message").value("Invalid email or password"));
+    }
+
+    @Test
+    void successfulLoginUpdatesLastLoginAt() throws Exception {
+        User user = createUser("last-login@test.local", PASSWORD);
+        assertThat(user.getLastLoginAt()).isNull();
+
+        login("last-login@test.local", PASSWORD);
+
+        User updatedUser = userRepository.findById(user.getId()).orElseThrow();
+        assertThat(updatedUser.getLastLoginAt()).isNotNull();
+    }
+
+    @Test
     void registerValidationRejectsNullAndBlankFields() throws Exception {
         assertValidationBody("/api/v1/auth/register", "{\"email\":null,\"password\":\"pass1\"}", "email", "Email must not be blank");
         assertValidationBody("/api/v1/auth/register", "{\"email\":\"\",\"password\":\"pass1\"}", "email", "Email must not be blank");

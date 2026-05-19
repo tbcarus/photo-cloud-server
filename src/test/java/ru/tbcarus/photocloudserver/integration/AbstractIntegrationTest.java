@@ -107,12 +107,17 @@ public abstract class AbstractIntegrationTest {
     }
 
     protected User createUser(String email, String rawPassword) {
+        return createUser(email, rawPassword, true, false);
+    }
+
+    protected User createUser(String email, String rawPassword, boolean enabled, boolean banned) {
         User user = User.builder()
                 .email(email.toLowerCase())
                 .password(passwordEncoder.encode(rawPassword))
+                .displayName("Test User")
                 .roles(Set.of(Role.USER))
-                .enabled(true)
-                .banned(false)
+                .enabled(enabled)
+                .banned(banned)
                 .build();
         return userRepository.save(user);
     }

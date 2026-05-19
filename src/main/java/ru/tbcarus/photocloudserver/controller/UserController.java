@@ -27,13 +27,13 @@ public class UserController {
         return ResponseEntity.ok(new UserDto(
                 user.getId(),
                 user.getEmail(),
-                user.getFirstName(),
-                user.getLastName(),
+                user.getDisplayName(),
                 user.isEnabled(),
                 user.isBanned(),
                 user.getRoles(),
                 user.getCreatedAt(),
-                user.getLastUpdate()
+                user.getLastUpdate(),
+                user.getLastLoginAt()
         ));
     }
 
