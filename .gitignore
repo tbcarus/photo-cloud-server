@@ -6,7 +6,7 @@ build/
 !**/src/test/**/build/
 src/main/resources/env.properties
 .env*
-storage
+/storage/
 
 ### STS ###
 .apt_generated

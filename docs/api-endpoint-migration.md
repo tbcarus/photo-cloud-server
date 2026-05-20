@@ -23,15 +23,11 @@ This document maps the previous server endpoints to the unified `/api/v1` contra
 | Не было | `PATCH /api/v1/profile` | Reserved TODO endpoint for profile update. |
 | Не было | `GET /api/v1/profile/settings` | Reserved TODO endpoint for profile settings. |
 | Не было | `PATCH /api/v1/profile/settings` | Reserved TODO endpoint for profile settings update. |
-| `POST /api/v1/photos/upload` | `POST /api/v1/media` | Media upload now uses the canonical media resource. |
-| `GET /api/v1/files` | `GET /api/v1/media` | Media list now uses the canonical media resource. |
-| Не было | `GET /api/v1/media/{id}` | New endpoint for media metadata. |
-| Не было | `PATCH /api/v1/media/{id}` | Reserved TODO endpoint for media metadata update. |
-| `DELETE /api/v1/photos/{id}` | `DELETE /api/v1/media/{id}` | Delete now uses the canonical media resource. |
-| `GET /api/v1/photos/{id}/download` | `GET /api/v1/media/{id}/download` | Download now uses the canonical media resource. |
-| `GET /api/v1/photos/{id}/thumbnail` | `GET /api/v1/media/{id}/thumbnail` | Reserved TODO endpoint for thumbnails. |
-| Не было | `POST /api/v1/media/check-exist` | Reserved TODO endpoint for checking one checksum. |
-| Не было | `POST /api/v1/media/checksums/exists` | Reserved TODO endpoint for batch checksum checks. |
-| `GET /api/v1/media/checksums` | `GET /api/v1/media/checksums` | Kept unchanged. |
+| `POST /api/v1/photos/upload` | `POST /api/v1/files` | File upload now uses the canonical files resource. |
+| `GET /api/v1/files` | `GET /api/v1/files` | File list now uses the canonical files resource. |
+| Не было | `GET /api/v1/files/{id}` | New endpoint for file metadata. |
+| `DELETE /api/v1/photos/{id}` | `DELETE /api/v1/files/{id}` | Delete now uses the canonical files resource. |
+| `GET /api/v1/photos/{id}/download` | `GET /api/v1/files/{id}/download` | Download now uses the canonical files resource. |
+| `GET /api/v1/files/checksums` | `GET /api/v1/files/checksums` | Kept with FileChecksumDto. |
 | `ALBUM_URL = /api/v1/albums` | Не перенесено | Album endpoint constants were removed; albums are future scope. |
 | `ALBUM_PHOTOS_URL = /api/v1/albums/{id}/photos` | Не перенесено | Album-photo endpoint constants were removed; albums are future scope. |

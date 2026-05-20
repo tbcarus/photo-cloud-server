@@ -411,7 +411,7 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void protectedEndpointWithoutTokenReturnsUnauthorizedErrorResponse() throws Exception {
-        perform(get("/api/v1/media"))
+        perform(get("/api/v1/files"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.id").isNotEmpty())
                 .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
@@ -421,7 +421,7 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void protectedEndpointWithInvalidJwtReturnsUnauthorizedErrorResponse() throws Exception {
-        perform(get("/api/v1/media")
+        perform(get("/api/v1/files")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer invalid.jwt.token"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.id").isNotEmpty())

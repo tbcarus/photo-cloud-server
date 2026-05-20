@@ -60,7 +60,7 @@
   - `400 Bad Request`: validation failures, malformed or missing request bodies, missing required request params, `BadRegistrationRequest`, `EntityNotFoundException`, `IllegalArgumentException`, `TickerRequestException`
   - `401 Unauthorized`: authentication failures such as `InvalidCredentialsException` and `InvalidRefreshTokenException`
   - `403 Forbidden`: forbidden operations such as `TokenRevokedException` and `RefreshTokenOwnershipException`
-  - `404 Not Found`: missing resources such as `RefreshTokenNotFoundException`, `MediaFileNotFoundException`, and custom `FileNotFoundException`
+  - `404 Not Found`: missing resources such as `RefreshTokenNotFoundException`, `FileItemNotFoundException`, and custom `FileNotFoundException`
   - `409 Conflict`: `DuplicateEmailException`
   - `500 Internal Server Error`: `DataIntegrityViolationException` with message `Database constraint violation`
 - `BadRegistrationRequest` is thrown by registration confirmation / password reset code validation paths and is mapped to `400 Bad Request` with the common error envelope.
@@ -155,24 +155,29 @@ Fields:
 }
 ```
 
-### `MediaFileDto`
+### `FileItemDto`
 
 ```json
 {
   "id": 42,
+  "folderId": 7,
   "originalFilename": "photo.jpg",
   "mimeType": "image/jpeg",
   "size": 123456,
-  "type": "IMAGE",
   "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "uploadedAt": "2026-05-17T10:15:30"
+  "fileType": "IMAGE",
+  "capturedAt": "2026-05-17T10:15:30",
+  "uploadedAt": "2026-05-17T10:16:00",
+  "deletedAt": null,
+  "metadata": null
 }
 ```
 
-### `MediaFileChecksumDto`
+### `FileChecksumDto`
 
 ```json
 {
+  "id": 42,
   "originalFilename": "photo.jpg",
   "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 }
@@ -641,25 +646,29 @@ User user@example.com was verified
   - response DTO: inline map
   - service method: none
 
-### MediaFileController
+### FileController
 
-#### `POST /api/v1/media`
+#### `POST /api/v1/files`
 - Authorization: **Yes**
 - Request:
   - header: `Authorization: Bearer <accessToken>`
   - multipart form-data part: `file`
 - Success: `200 OK`
-- Response DTO: `MediaFileDto`
+- Response DTO: `FileItemDto`
 
 ```json
 {
   "id": 42,
+  "folderId": 7,
   "originalFilename": "photo.jpg",
   "mimeType": "image/jpeg",
   "size": 123456,
-  "type": "IMAGE",
   "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "uploadedAt": "2026-05-17T10:15:30"
+  "fileType": "IMAGE",
+  "capturedAt": "2026-05-17T10:15:30",
+  "uploadedAt": "2026-05-17T10:16:00",
+  "deletedAt": null,
+  "metadata": null
 }
 ```
 
@@ -667,7 +676,7 @@ User user@example.com was verified
   - duplicate detection key: `(currentUser.id, sha256(file bytes))`
   - if duplicate exists, no new DB row and no new physical file are created
   - response is still `200 OK`
-  - body is the **existing** `MediaFileDto`
+  - body is the **existing** `FileItemDto`
   - the original filename in the response is the first stored file name, not the newly uploaded duplicate name
 - Errors:
   - `400`:
@@ -678,12 +687,12 @@ User user@example.com was verified
   - `409`: not used for duplicates
   - `500`: metadata persistence failure (`DataIntegrityViolationException`) or other unexpected failure
 - Java classes:
-  - controller method: `MediaFileController.uploadFile`
+  - controller method: `FileController.uploadFile`
   - request DTO: none; multipart part `file`
-  - response DTO: `MediaFileDto`
-  - service method: `MediaFileService.uploadFile`
+  - response DTO: `FileItemDto`
+  - service method: `FileItemService.uploadFile`
 
-#### `GET /api/v1/media?page=0&size=10`
+#### `GET /api/v1/files?page=0&size=10`
 - Authorization: **Yes**
 - Request:
   - header: `Authorization: Bearer <accessToken>`
@@ -691,19 +700,23 @@ User user@example.com was verified
     - `page: int`, default `0`
     - `size: int`, default `10`
 - Success: `200 OK`
-- Response DTO: `PageResponse<MediaFileDto>`
+- Response DTO: `PageResponse<FileItemDto>`
 
 ```json
 {
   "items": [
     {
       "id": 42,
+      "folderId": 7,
       "originalFilename": "photo.jpg",
       "mimeType": "image/jpeg",
       "size": 123456,
-      "type": "IMAGE",
       "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "uploadedAt": "2026-05-17T10:15:30"
+      "fileType": "IMAGE",
+      "capturedAt": "2026-05-17T10:15:30",
+      "uploadedAt": "2026-05-17T10:16:00",
+      "deletedAt": null,
+      "metadata": null
     }
   ],
   "page": 0,
@@ -722,31 +735,31 @@ User user@example.com was verified
   - `409`: not used
   - `500`: possible only as generic unexpected server failure
 - Java classes:
-  - controller method: `MediaFileController.getUserFiles`
+  - controller method: `FileController.getUserFiles`
   - request DTO: none
-  - response DTO: `PageResponse<MediaFileDto>`
-  - service method: `MediaFileService.getUserFiles`
+  - response DTO: `PageResponse<FileItemDto>`
+  - service method: `FileItemService.getUserFiles`
 
-#### `GET /api/v1/media/{id}`
+#### `GET /api/v1/files/{id}`
 - Authorization: **Yes**
 - Request:
   - header: `Authorization: Bearer <accessToken>`
   - path params: `id: long`
 - Success: `200 OK`
-- Response DTO: `MediaFileDto`
+- Response DTO: `FileItemDto`
 - Errors:
   - `400`: path binding failure for invalid `id`
   - `401`: missing, expired, malformed, invalid, or wrong-token-type bearer token
-  - `404`: returned both when the media file does not exist **and** when it belongs to another user
+  - `404`: returned both when the file item does not exist **and** when it belongs to another user
   - `409`: not used
   - `500`: possible only as generic unexpected server failure
 - Java classes:
-  - controller method: `MediaFileController.getFile`
+  - controller method: `FileController.getFile`
   - request DTO: none
-  - response DTO: `MediaFileDto`
-  - service methods: `MediaFileService.getFileDtoForCurrentUser`, `MediaFileService.getFileForCurrentUser`
+  - response DTO: `FileItemDto`
+  - service methods: `FileItemService.getFileDtoForCurrentUser`, `FileItemService.getFileForCurrentUser`
 
-#### `GET /api/v1/media/{id}/download`
+#### `GET /api/v1/files/{id}/download`
 - Authorization: **Yes**
 - Request:
   - header: `Authorization: Bearer <accessToken>`
@@ -761,32 +774,18 @@ User user@example.com was verified
   - `400`: path binding failure for invalid `id`
   - `401`: missing, expired, malformed, invalid, or wrong-token-type bearer token
   - `404`:
-    - media file not found
-    - media file belongs to another user
+    - file item not found
+    - file item belongs to another user
     - DB row exists but physical file is missing or unreadable
   - `409`: not used
   - `500`: possible only as generic unexpected server failure
 - Java classes:
-  - controller method: `MediaFileController.downloadFile`
+  - controller method: `FileController.downloadFile`
   - request DTO: none
   - response DTO: `Resource`
-  - service method: `MediaFileService.getFileForCurrentUser`
+  - service method: `FileItemService.getFileForCurrentUser`
 
-#### `PATCH /api/v1/media/{id}`
-- Authorization: **Yes**
-- Response: `501 Not Implemented`
-
-```json
-{"message":"Media metadata update is not implemented yet"}
-```
-
-- Java classes:
-  - controller method: `MediaFileController.updateFile`
-  - request DTO: none declared
-  - response DTO: inline map
-  - service method: none
-
-#### `DELETE /api/v1/media/{id}`
+#### `DELETE /api/v1/files/{id}`
 - Authorization: **Yes**
 - Request:
   - header: `Authorization: Bearer <accessToken>`
@@ -796,69 +795,26 @@ User user@example.com was verified
 - Errors:
   - `400`: path binding failure for invalid `id`
   - `401`: missing, expired, malformed, invalid, or wrong-token-type bearer token
-  - `404`: returned both when the media file does not exist **and** when it belongs to another user
+  - `404`: returned both when the file item does not exist **and** when it belongs to another user
   - `409`: not used
   - `500`: possible only as generic unexpected server failure
 - Java classes:
-  - controller method: `MediaFileController.deleteFile`
+  - controller method: `FileController.deleteFile`
   - request DTO: none
   - response DTO: none
-  - service method: `MediaFileService.deleteFileForCurrentUser`
+  - service method: `FileItemService.deleteFileForCurrentUser`
 
-#### `GET /api/v1/media/{id}/thumbnail`
-- Authorization: **Yes**
-- Response: `501 Not Implemented`
-
-```json
-{"message":"Media thumbnail is not implemented yet"}
-```
-
-- Java classes:
-  - controller method: `MediaFileController.getThumbnail`
-  - request DTO: none
-  - response DTO: inline map
-  - service method: none
-
-#### `POST /api/v1/media/check-exist`
-- Authorization: **Yes**
-- Request: no declared DTO/body in current code
-- Response: `501 Not Implemented`
-
-```json
-{"message":"Single checksum check is not implemented yet"}
-```
-
-- Java classes:
-  - controller method: `MediaFileController.checkExist`
-  - request DTO: none declared
-  - response DTO: inline map
-  - service method: none
-
-#### `POST /api/v1/media/checksums/exists`
-- Authorization: **Yes**
-- Request: no declared DTO/body in current code
-- Response: `501 Not Implemented`
-
-```json
-{"message":"Batch checksum check is not implemented yet"}
-```
-
-- Java classes:
-  - controller method: `MediaFileController.checkChecksumsExist`
-  - request DTO: none declared
-  - response DTO: inline map
-  - service method: none
-
-#### `GET /api/v1/media/checksums`
+#### `GET /api/v1/files/checksums`
 - Authorization: **Yes**
 - Request:
   - header: `Authorization: Bearer <accessToken>`
 - Success: `200 OK`
-- Response DTO: `List<MediaFileChecksumDto>`
+- Response DTO: `List<FileChecksumDto>`
 
 ```json
 [
   {
+    "id": 42,
     "originalFilename": "photo.jpg",
     "checksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   }
@@ -872,10 +828,10 @@ User user@example.com was verified
   - `409`: not used
   - `500`: possible only as generic unexpected server failure
 - Java classes:
-  - controller method: `MediaFileController.getChecksums`
+  - controller method: `FileController.getChecksums`
   - request DTO: none
-  - response DTO: `List<MediaFileChecksumDto>`
-  - service method: `MediaFileService.getChecksumsForUser`
+  - response DTO: `List<FileChecksumDto>`
+  - service method: `FileItemService.getChecksumsForUser`
 
 ## Client migration notes
 
@@ -890,14 +846,14 @@ Required for currently implemented flows:
 - `RegisterRequest(email, password)`
 - `PasswordResetConfirmRequest(password, code)`
 - `UserDto`
-- `MediaFileDto`
-- `MediaFileChecksumDto`
+- `FileItemDto`
+- `FileChecksumDto`
 - Unified error DTO: `ApiErrorResponse(id, code, message, fieldErrors)`
-- `PageResponse<MediaFileDto>`
+- `PageResponse<FileItemDto>`
 
 ### Pagination migration note for Android
 
-- `GET /api/v1/media` now exposes `PageResponse<MediaFileDto>` instead of the raw Spring Data page shape.
+- `GET /api/v1/files` now exposes `PageResponse<FileItemDto>` instead of the raw Spring Data page shape.
 - Use `items` instead of Spring's `content`.
 - The public pagination contract is limited to `page`, `size`, `totalElements`, `totalPages`, `hasNext`, and `hasPrevious`.
 - Spring internals such as `pageable`, `sort`, `number`, `numberOfElements`, `empty`, `first`, and `last` are not part of the client contract.
@@ -937,12 +893,12 @@ Required for currently implemented flows:
 - `POST /api/v1/auth/password/reset/request`
 - `POST /api/v1/auth/password/reset/confirm`
 - `GET /api/v1/profile`
-- `POST /api/v1/media`
-- `GET /api/v1/media`
-- `GET /api/v1/media/{id}`
-- `GET /api/v1/media/{id}/download`
-- `DELETE /api/v1/media/{id}`
-- `GET /api/v1/media/checksums`
+- `POST /api/v1/files`
+- `GET /api/v1/files`
+- `GET /api/v1/files/{id}`
+- `GET /api/v1/files/{id}/download`
+- `DELETE /api/v1/files/{id}`
+- `GET /api/v1/files/checksums`
 
 ### TODO / NOT IMPLEMENTED endpoints
 
@@ -953,10 +909,6 @@ Required for currently implemented flows:
 - `PATCH /api/v1/profile`
 - `GET /api/v1/profile/settings`
 - `PATCH /api/v1/profile/settings`
-- `PATCH /api/v1/media/{id}`
-- `GET /api/v1/media/{id}/thumbnail`
-- `POST /api/v1/media/check-exist`
-- `POST /api/v1/media/checksums/exists`
 
 ### Errors the client should handle
 
@@ -972,12 +924,10 @@ Required for currently implemented flows:
   - forbidden operations, including revoked refresh tokens and foreign refresh-token ownership
 - `404`
   - missing resources, including unknown refresh tokens in logout flows
-  - media metadata / download / delete for missing media
-  - the same `404` is returned for someone else’s media file; the client cannot distinguish foreign vs nonexistent media
+  - file metadata / download / delete for missing files
+  - the same `404` is returned for someone else's file item; the client cannot distinguish foreign vs nonexistent file
 - `409`
   - duplicate registration email
-- `501`
-  - reserved TODO endpoints
 - `500`
   - generic unexpected failure
   - metadata persistence failure during upload

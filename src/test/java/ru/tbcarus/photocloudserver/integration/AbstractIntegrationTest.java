@@ -28,13 +28,15 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import ru.tbcarus.photocloudserver.model.MediaFile;
+import ru.tbcarus.photocloudserver.model.FileItem;
 import ru.tbcarus.photocloudserver.model.Role;
 import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.model.dto.LoginResponse;
-import ru.tbcarus.photocloudserver.model.dto.MediaFileDto;
-import ru.tbcarus.photocloudserver.repository.MediaFileRepository;
 import ru.tbcarus.photocloudserver.repository.EmailRequestRepository;
+import ru.tbcarus.photocloudserver.model.dto.FileItemDto;
+import ru.tbcarus.photocloudserver.repository.FileItemRepository;
+import ru.tbcarus.photocloudserver.repository.FolderRepository;
+import ru.tbcarus.photocloudserver.repository.StoredObjectRepository;
 import ru.tbcarus.photocloudserver.repository.UserRepository;
 
 import java.io.IOException;
@@ -73,7 +75,13 @@ public abstract class AbstractIntegrationTest {
     protected UserRepository userRepository;
 
     @Autowired
-    protected MediaFileRepository mediaFileRepository;
+    protected FileItemRepository fileItemRepository;
+
+    @Autowired
+    protected StoredObjectRepository storedObjectRepository;
+
+    @Autowired
+    protected FolderRepository folderRepository;
 
     @Autowired
     protected EmailRequestRepository emailRequestRepository;
@@ -90,7 +98,7 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.datasource.username", POSTGRES::getUsername);
         registry.add("spring.datasource.password", POSTGRES::getPassword);
         registry.add("spring.datasource.driver-class-name", POSTGRES::getDriverClassName);
-        registry.add("storage.baseStoragePath", () -> TEST_STORAGE.toString());
+        registry.add("storage.root", () -> TEST_STORAGE.toString());
     }
 
     @BeforeEach
@@ -141,14 +149,14 @@ public abstract class AbstractIntegrationTest {
         return "Bearer " + accessToken;
     }
 
-    protected MediaFileDto upload(String accessToken, String filename, String contentType, byte[] bytes) throws Exception {
-        MvcResult result = perform(multipart("/api/v1/media")
+    protected FileItemDto upload(String accessToken, String filename, String contentType, byte[] bytes) throws Exception {
+        MvcResult result = perform(multipart("/api/v1/files")
                         .file(filePart(filename, contentType, bytes))
                         .header(HttpHeaders.AUTHORIZATION, authHeader(accessToken)))
                 .andExpect(status().isOk())
                 .andReturn();
 
-        return objectMapper.readValue(result.getResponse().getContentAsString(), MediaFileDto.class);
+        return objectMapper.readValue(result.getResponse().getContentAsString(), FileItemDto.class);
     }
 
     protected MockMultipartFile filePart(String filename, String contentType, byte[] bytes) {
@@ -168,13 +176,17 @@ public abstract class AbstractIntegrationTest {
         }
     }
 
-    protected MediaFile findMedia(Long id) {
-        return mediaFileRepository.findById(id)
-                .orElseThrow(() -> new AssertionError("Media file " + id + " was not found"));
+    protected FileItem findFileItem(Long id) {
+        return fileItemRepository.findWithRelationsById(id)
+                .orElseThrow(() -> new AssertionError("File item " + id + " was not found"));
     }
 
     protected void deletePhysicalFile(Long id) throws IOException {
-        Files.deleteIfExists(Path.of(findMedia(id).getStoragePath()));
+        Files.deleteIfExists(TEST_STORAGE.resolve(findFileItem(id).getStoredObject().getStorageKey()));
+    }
+
+    protected Path storageRoot() {
+        return TEST_STORAGE;
     }
 
     protected long storageFileCount() throws IOException {
@@ -187,7 +199,7 @@ public abstract class AbstractIntegrationTest {
     }
 
     protected void cleanupDbAndStorage() throws IOException {
-        jdbcTemplate.execute("TRUNCATE TABLE media_file, refresh_token, email_requests, user_roles, users RESTART IDENTITY CASCADE");
+        jdbcTemplate.execute("TRUNCATE TABLE file_metadata, file_item, stored_object, folder, refresh_token, email_requests, user_roles, users RESTART IDENTITY CASCADE");
         deleteChildren(TEST_STORAGE);
         Files.createDirectories(TEST_STORAGE);
     }

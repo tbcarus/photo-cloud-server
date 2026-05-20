@@ -5,7 +5,7 @@
 @password = pass1
 @confirmationCode = replace-with-registration-code
 @passwordResetCode = 5761d001-0660-4052-9945-b2a83103a692
-@mediaFileId = 4
+@fileItemId = 4
 @checksum = replace-with-sha256-checksum
 @uploadFile = C:/Users/balashov/Pictures/Снимок1111.JPG
 
@@ -129,9 +129,9 @@ Content-Type: application/json
   "autoUploadEnabled": true
 }
 
-### РЕАЛИЗОВАНО - MediaFileController: загрузка одного media-файла
+### РЕАЛИЗОВАНО - FileController: загрузка одного media-файла
 #Ожидается 200 OK. При повторной загрузке того же содержимого для того же user вернётся DTO уже существующего файла.
-POST {{baseUrl}}/api/v1/media
+POST {{baseUrl}}/api/v1/files
 Authorization: Bearer {{accessToken}}
 Content-Type: multipart/form-data; boundary=SmokeBoundary
 
@@ -143,63 +143,31 @@ Content-Type: image/jpeg
 < C:/Users/admin/Desktop/Скорости.jpg
 --SmokeBoundary--
 
-### IMPLEMENTED - MediaFileController: paginated media list
+### IMPLEMENTED - FileController: paginated file list
 #ОК
-# Response: PageResponse<MediaFileDto> (items, page, size, totalElements, totalPages, hasNext, hasPrevious)
-GET {{baseUrl}}/api/v1/media?page=0&size=10
+# Response: PageResponse<FileItemDto> (items, page, size, totalElements, totalPages, hasNext, hasPrevious)
+GET {{baseUrl}}/api/v1/files?page=0&size=10
 Authorization: Bearer {{accessToken}}
 
-### РЕАЛИЗОВАНО - MediaFileController: получение метаданных media-файла
+### РЕАЛИЗОВАНО - FileController: получение метаданных media-файла
 #OK
 #404 Not Found: foreign media id and missing media id must look the same.
-GET {{baseUrl}}/api/v1/media/{{mediaFileId}}
+GET {{baseUrl}}/api/v1/files/{{fileItemId}}
 Authorization: Bearer {{accessToken}}
 
-### TODO / НЕ РЕАЛИЗОВАНО - MediaFileController: обновление метаданных media-файла
-PATCH {{baseUrl}}/api/v1/media/{{mediaFileId}}
-Authorization: Bearer {{accessToken}}
-Content-Type: application/json
-
-{
-  "originalFilename": "renamed-sample-media.jpg"
-}
-
-### РЕАЛИЗОВАНО - MediaFileController: скачивание media-файла
+### РЕАЛИЗОВАНО - FileController: скачивание media-файла
 #Ожидается 200 OK и бинарное содержимое файла из physical path, сохранённого в БД.
-#404 Not Found: foreign media id, missing media id, or missing physical file must return a neutral 404 without storagePath.
-GET {{baseUrl}}/api/v1/media/{{mediaFileId}}/download
+#404 Not Found: foreign media id, missing media id, or missing physical file must return a neutral 404 without storageKey.
+GET {{baseUrl}}/api/v1/files/{{fileItemId}}/download
 Authorization: Bearer {{accessToken}}
 
-### TODO / НЕ РЕАЛИЗОВАНО - MediaFileController: получение thumbnail media-файла
-GET {{baseUrl}}/api/v1/media/{{mediaFileId}}/thumbnail
-Authorization: Bearer {{accessToken}}
-
-### РЕАЛИЗОВАНО - MediaFileController: удаление media-файла
-#Ожидается 204 No Content. Файл на диске удаляется по storagePath, затем удаляется запись из БД.
+### РЕАЛИЗОВАНО - FileController: удаление media-файла
+#Ожидается 204 No Content. Файл на диске удаляется по storageKey, затем удаляется запись из БД.
 #404 Not Found: foreign media id and missing media id must look the same.
-DELETE {{baseUrl}}/api/v1/media/{{mediaFileId}}
+DELETE {{baseUrl}}/api/v1/files/{{fileItemId}}
 Authorization: Bearer {{accessToken}}
 
-### РЕАЛИЗОВАНО - MediaFileController: получение checksum'ов текущего пользователя
+### РЕАЛИЗОВАНО - FileController: получение checksum'ов текущего пользователя
 #Ожидается: originalFilename = имя файла, checksum = SHA-256 файла.
-GET {{baseUrl}}/api/v1/media/checksums
+GET {{baseUrl}}/api/v1/files/checksums
 Authorization: Bearer {{accessToken}}
-
-### TODO / НЕ РЕАЛИЗОВАНО - MediaFileController: проверка одного checksum
-POST {{baseUrl}}/api/v1/media/check-exist
-Authorization: Bearer {{accessToken}}
-Content-Type: application/json
-
-{
-  "checksum": "{{checksum}}"
-}
-
-### TODO / НЕ РЕАЛИЗОВАНО - MediaFileController: batch-проверка checksum'ов
-POST {{baseUrl}}/api/v1/media/checksums/exists
-Authorization: Bearer {{accessToken}}
-Content-Type: application/json
-
-[
-  "{{checksum}}",
-  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-]

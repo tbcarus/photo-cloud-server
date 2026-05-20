@@ -11,7 +11,7 @@
 
 1. Запусти сервер локально, обычно на `http://localhost:8080`.
 2. Открой `api-smoke-tests.http`.
-3. Проверь переменные в начале файла: `@baseUrl`, `@email`, `@password`, `@confirmationCode`, `@passwordResetCode`, `@mediaFileId` и `@uploadFile`.
+3. Проверь переменные в начале файла: `@baseUrl`, `@email`, `@password`, `@confirmationCode`, `@passwordResetCode`, `@fileItemId` и `@uploadFile`.
 4. Сначала выполни запрос login. Он сохранит `accessToken` и `refreshToken` в глобальные переменные IntelliJ.
 5. После login запускай запросы, которым нужна авторизация.
 
@@ -21,7 +21,7 @@
 
 1. Создай переменные Postman `baseUrl`, `accessToken` и `refreshToken`.
 2. Скопируй нужную команду из `api-curl-examples.md`.
-3. Замени значения-заглушки вроде `<CONFIRMATION_CODE>`, `<PASSWORD_RESET_CODE>` и id медиафайлов.
+3. Замени значения-заглушки вроде `<CONFIRMATION_CODE>`, `<PASSWORD_RESET_CODE>` и id файлов.
 
 ## Требования к JWT
 
@@ -46,7 +46,7 @@ Endpoint'ы, которым нужен заголовок `Authorization: Bearer
 - `POST /api/v1/auth/logout-all`
 - `POST /api/v1/auth/logout-others`
 - все endpoint'ы `/api/v1/profile...`
-- все endpoint'ы `/api/v1/media...`
+- все endpoint'ы `/api/v1/files...`
 
 ## TODO / НЕ РЕАЛИЗОВАНО
 
@@ -59,10 +59,6 @@ Endpoint'ы, которым нужен заголовок `Authorization: Bearer
 - `PATCH /api/v1/profile`
 - `GET /api/v1/profile/settings`
 - `PATCH /api/v1/profile/settings`
-- `PATCH /api/v1/media/{id}`
-- `GET /api/v1/media/{id}/thumbnail`
-- `POST /api/v1/media/check-exist`
-- `POST /api/v1/media/checksums/exists`
 
 ## Заметки по текущей реализации
 

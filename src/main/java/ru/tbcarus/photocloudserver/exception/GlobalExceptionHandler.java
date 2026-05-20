@@ -84,10 +84,10 @@ public class GlobalExceptionHandler {
                 .body(error(ErrorCode.BAD_REQUEST, e.getMessage()));
     }
 
-    @ExceptionHandler(MediaFileNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleMediaFileNotFound(MediaFileNotFoundException e) {
+    @ExceptionHandler(FileItemNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleFileItemNotFound(FileItemNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(error(ErrorCode.MEDIA_FILE_NOT_FOUND, e.getMessage()));
+                .body(error(ErrorCode.FILE_ITEM_NOT_FOUND, e.getMessage()));
     }
 
     @ExceptionHandler(FileNotFoundException.class)

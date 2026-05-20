@@ -1,23 +1,14 @@
 package ru.tbcarus.photocloudserver.model.dto;
 
 import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import ru.tbcarus.photocloudserver.model.MediaType;
-
-import java.time.LocalDateTime;
 
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-public class MediaFileDto {
+public class FileChecksumDto {
     private Long id;
     private String originalFilename;
-    private String mimeType;
-    private Long size;
-    private MediaType type;
     private String checksum;
-    private LocalDateTime uploadedAt;
 }
