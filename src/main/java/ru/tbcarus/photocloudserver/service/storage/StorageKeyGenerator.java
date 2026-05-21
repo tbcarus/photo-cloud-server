@@ -10,11 +10,20 @@ import java.util.UUID;
 public class StorageKeyGenerator {
 
     private final FilenameSanitizer filenameSanitizer;
+    private final StorageProperties storageProperties;
 
-    public String generate(Long userId, String checksum, String originalFilename, String mimeType) {
+    public String generateFilePath(Long userId, String checksum) {
         String firstShard = checksum.substring(0, 2);
         String secondShard = checksum.substring(2, 4);
-        String storageFilename = filenameSanitizer.buildStorageFilename(originalFilename, mimeType, UUID.randomUUID().toString());
-        return "users/%d/objects/%s/%s/%s".formatted(userId, firstShard, secondShard, storageFilename);
+        return "users/%d/objects/%s/%s".formatted(userId, firstShard, secondShard);
+    }
+
+    public String generateFilename(String originalFilename, String mimeType) {
+        return filenameSanitizer.buildPhysicalFilename(
+                originalFilename,
+                mimeType,
+                UUID.randomUUID().toString(),
+                storageProperties.getPhysicalFilename().getOriginalNameMaxLength()
+        );
     }
 }

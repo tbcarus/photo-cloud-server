@@ -35,6 +35,8 @@ token:
 
 storage:
   root: ${STORAGE_ROOT:storage} # корневая папка физического хранения файлов
+  physical-filename:
+    original-name-max-length: 80
 
 logging:
   level:

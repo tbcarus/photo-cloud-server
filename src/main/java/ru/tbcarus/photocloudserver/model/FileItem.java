@@ -8,10 +8,8 @@ import java.time.LocalDateTime;
 @Entity
 @Table(
         name = "file_item",
-        uniqueConstraints = @UniqueConstraint(name = "uk_file_item_user_checksum", columnNames = {"user_id", "checksum"}),
         indexes = {
                 @Index(name = "idx_file_item_user_captured_uploaded_id", columnList = "user_id,captured_at,uploaded_at,id"),
-                @Index(name = "idx_file_item_user_file_type", columnList = "user_id,file_type"),
                 @Index(name = "idx_file_item_folder", columnList = "folder_id"),
                 @Index(name = "idx_file_item_stored_object", columnList = "stored_object_id")
         }
@@ -39,21 +37,8 @@ public class FileItem {
     @JoinColumn(name = "stored_object_id", nullable = false)
     private StoredObject storedObject;
 
-    @Column(nullable = false, length = 255)
-    private String originalFilename;
-
-    @Column(nullable = false, length = 100)
-    private String mimeType;
-
-    @Column(nullable = false)
-    private Long size;
-
-    @Column(nullable = false, length = 64)
-    private String checksum;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    private FileType fileType;
+    @Column(name = "original_name", nullable = false, length = 255)
+    private String originalName;
 
     @Column(nullable = false)
     private LocalDateTime capturedAt;

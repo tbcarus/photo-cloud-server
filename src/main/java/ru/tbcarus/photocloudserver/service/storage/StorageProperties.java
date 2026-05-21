@@ -11,4 +11,11 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "storage")
 public class StorageProperties {
     private String root;
+    private PhysicalFilename physicalFilename = new PhysicalFilename();
+
+    @Getter
+    @Setter
+    public static class PhysicalFilename {
+        private int originalNameMaxLength = 80;
+    }
 }

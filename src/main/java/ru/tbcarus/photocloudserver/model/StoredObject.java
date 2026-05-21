@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(
         name = "stored_object",
-        uniqueConstraints = @UniqueConstraint(name = "uk_stored_object_user_storage_key", columnNames = {"user_id", "storage_key"}),
+        uniqueConstraints = @UniqueConstraint(name = "uk_stored_object_user_checksum", columnNames = {"user_id", "checksum"}),
         indexes = @Index(name = "idx_stored_object_user", columnList = "user_id")
 )
 @Getter
@@ -27,8 +27,27 @@ public class StoredObject {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(name = "storage_key", nullable = false, length = 1024)
-    private String storageKey;
+    @Column(name = "file_path", nullable = false, length = 1024)
+    private String filePath;
+
+    @Column(nullable = false, length = 255)
+    private String filename;
+
+    @Column(name = "file_extension", nullable = false, length = 20)
+    private String fileExtension;
+
+    @Column(nullable = false, length = 64)
+    private String checksum;
+
+    @Column(nullable = false)
+    private Long size;
+
+    @Column(name = "detected_mime_type", nullable = false, length = 100)
+    private String detectedMimeType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private FileType fileType;
 
     @CreationTimestamp
     @Column(nullable = false, updatable = false)

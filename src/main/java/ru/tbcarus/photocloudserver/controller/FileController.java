@@ -29,7 +29,7 @@ import java.util.List;
 @RequestMapping(FileController.BASE_URL)
 @Tag(name = "Files processing")
 public class FileController {
-    // Контроллер оставляет наружу только логическую FileItem-модель без storageKey.
+    // Контроллер оставляет наружу только логическую FileItem-модель без данных физического хранения.
     public static final String BASE_URL = ApiPaths.API_V1 + "/files";
     public static final String FILE_ID_URL = "/{id}";
     public static final String DOWNLOAD_URL = FILE_ID_URL + "/download";
@@ -79,8 +79,8 @@ public class FileController {
         FileItem file = fileItemService.getFileForCurrentUser(id, user);
         Resource resource = fileItemService.getDownloadResource(file);
         return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType(file.getMimeType()))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getOriginalFilename() + "\"")
+                .contentType(MediaType.parseMediaType(file.getStoredObject().getDetectedMimeType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getOriginalName() + "\"")
                 .body(resource);
     }
 

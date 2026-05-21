@@ -22,13 +22,13 @@ public interface FileItemRepository extends JpaRepository<FileItem, Long> {
     Optional<FileItem> findByIdAndUserId(Long id, Long userId);
 
     @EntityGraph(attributePaths = {"folder", "folder.parent", "storedObject", "metadata"})
-    Optional<FileItem> findByUserIdAndChecksum(Long userId, String checksum);
-
-    @EntityGraph(attributePaths = {"folder", "folder.parent", "storedObject", "metadata"})
     @Query("SELECT f FROM FileItem f WHERE f.id = :id")
     Optional<FileItem> findWithRelationsById(Long id);
 
-    @Query("SELECT new ru.tbcarus.photocloudserver.model.dto.FileChecksumDto(f.id, f.originalFilename, f.checksum) " +
+    @EntityGraph(attributePaths = {"folder", "folder.parent", "storedObject", "metadata"})
+    List<FileItem> findAllByStoredObjectId(Long storedObjectId);
+
+    @Query("SELECT new ru.tbcarus.photocloudserver.model.dto.FileChecksumDto(f.id, f.originalName, f.storedObject.checksum) " +
             "FROM FileItem f WHERE f.user.id = :userId")
     List<FileChecksumDto> findAllChecksumsAndOriginalFilenamesByUserId(Long userId);
 }

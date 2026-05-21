@@ -7,6 +7,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import ru.tbcarus.photocloudserver.model.FileItem;
 import ru.tbcarus.photocloudserver.model.FileType;
 import ru.tbcarus.photocloudserver.model.FolderType;
+import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.model.dto.FileItemDto;
 
 import java.nio.file.Files;
@@ -51,13 +52,17 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
                 .andExpect(status().isOk())
                 .andReturn();
-        assertThat(result.getResponse().getContentAsString()).doesNotContain("storageKey");
+        assertThat(result.getResponse().getContentAsString()).doesNotContain("filePath");
+        assertThat(result.getResponse().getContentAsString()).doesNotContain("filename");
         assertThat(result.getResponse().getContentAsString()).doesNotContain("storedObject");
 
         FileItem fileItem = findFileItem(response.getId());
-        Path storedFile = storageRoot().resolve(fileItem.getStoredObject().getStorageKey());
-        assertThat(fileItem.getOriginalFilename()).isEqualTo("photo.jpg");
-        assertThat(fileItem.getChecksum()).isEqualTo(sha256(bytes));
+        Path storedFile = storedObjectPath(fileItem.getStoredObject());
+        assertThat(fileItem.getOriginalName()).isEqualTo("photo.jpg");
+        assertThat(fileItem.getStoredObject().getChecksum()).isEqualTo(sha256(bytes));
+        assertThat(fileItem.getStoredObject().getSize()).isEqualTo(bytes.length);
+        assertThat(fileItem.getStoredObject().getDetectedMimeType()).isEqualTo("image/jpeg");
+        assertThat(fileItem.getStoredObject().getFileType()).isEqualTo(FileType.IMAGE);
         assertThat(fileItem.getFolder().getFolderType()).isEqualTo(FolderType.CAMERA);
         assertThat(fileItem.getFolder().getParent().getFolderType()).isEqualTo(FolderType.ROOT);
         assertThat(Files.exists(storedFile)).isTrue();
@@ -65,7 +70,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void duplicateUploadReturnsExistingFileWithoutDuplicatingDatabaseStorageOrStoredObject() throws Exception {
+    void duplicateUploadCreatesNewFileItemWithoutDuplicatingPhysicalStorageOrStoredObject() throws Exception {
         var user = createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
         byte[] bytes = "same-content".getBytes();
@@ -74,9 +79,11 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         long storageFilesAfterFirstUpload = storageFileCount();
         FileItemDto second = upload(token, "second-name.jpg", "image/jpeg", bytes);
 
-        assertThat(second.getId()).isEqualTo(first.getId());
+        assertThat(second.getId()).isNotEqualTo(first.getId());
         assertThat(second.getChecksum()).isEqualTo(first.getChecksum());
-        assertThat(fileItemRepository.findAll()).hasSize(1);
+        assertThat(findFileItem(second.getId()).getStoredObject().getId())
+                .isEqualTo(findFileItem(first.getId()).getStoredObject().getId());
+        assertThat(fileItemRepository.findAll()).hasSize(2);
         assertThat(storedObjectRepository.findAll()).hasSize(1);
         assertThat(storageFileCount()).isEqualTo(storageFilesAfterFirstUpload);
     }
@@ -161,13 +168,43 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
         byte[] bytes = "download-bytes".getBytes();
         FileItemDto uploaded = upload(token, "download.jpg", "image/jpeg", bytes);
+        FileItem fileItem = findFileItem(uploaded.getId());
+        jdbcTemplate.update("UPDATE stored_object SET detected_mime_type = ? WHERE id = ?",
+                "image/png", fileItem.getStoredObject().getId());
 
         perform(get("/api/v1/files/{id}/download", uploaded.getId())
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
                 .andExpect(status().isOk())
-                .andExpect(content().contentType("image/jpeg"))
+                .andExpect(content().contentType("image/png"))
                 .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"download.jpg\""))
                 .andExpect(content().bytes(bytes));
+    }
+
+    @Test
+    void fileItemDtoReturnsPhysicalFieldsFromStoredObject() throws Exception {
+        createUser("user1@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
+        FileItemDto uploaded = upload(token, "dto.jpg", "image/jpeg", "dto".getBytes());
+        FileItem fileItem = findFileItem(uploaded.getId());
+        String storedChecksum = "b".repeat(64);
+
+        jdbcTemplate.update("""
+                        UPDATE stored_object
+                        SET checksum = ?, size = ?, detected_mime_type = ?, file_type = ?
+                        WHERE id = ?
+                        """,
+                storedChecksum, 777L, "text/plain", "DOCUMENT", fileItem.getStoredObject().getId());
+
+        MvcResult result = perform(get("/api/v1/files/{id}", uploaded.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        FileItemDto response = objectMapper.readValue(result.getResponse().getContentAsString(), FileItemDto.class);
+        assertThat(response.getChecksum()).isEqualTo(storedChecksum);
+        assertThat(response.getSize()).isEqualTo(777L);
+        assertThat(response.getMimeType()).isEqualTo("text/plain");
+        assertThat(response.getFileType()).isEqualTo(FileType.DOCUMENT);
     }
 
     @Test
@@ -201,7 +238,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         FileItemDto uploaded = upload(token, "delete.jpg", "image/jpeg", "delete".getBytes());
         FileItem fileItem = findFileItem(uploaded.getId());
         Long storedObjectId = fileItem.getStoredObject().getId();
-        Path storedFile = storageRoot().resolve(fileItem.getStoredObject().getStorageKey());
+        Path storedFile = storedObjectPath(fileItem.getStoredObject());
 
         MvcResult result = perform(delete("/api/v1/files/{id}", uploaded.getId())
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
@@ -212,6 +249,59 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         assertThat(fileItemRepository.findById(uploaded.getId())).isEmpty();
         assertThat(storedObjectRepository.findById(storedObjectId)).isEmpty();
         assertThat(Files.exists(storedFile)).isFalse();
+    }
+
+    @Test
+    void ownerDeleteRemovesAllFileItemsStoredObjectAndPhysicalFile() throws Exception {
+        createUser("user1@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
+        byte[] bytes = "same-delete".getBytes();
+        FileItemDto first = upload(token, "first.jpg", "image/jpeg", bytes);
+        FileItemDto second = upload(token, "second.jpg", "image/jpeg", bytes);
+        FileItem firstItem = findFileItem(first.getId());
+        Long storedObjectId = firstItem.getStoredObject().getId();
+        Path storedFile = storedObjectPath(firstItem.getStoredObject());
+
+        perform(delete("/api/v1/files/{id}", first.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isNoContent());
+
+        assertThat(fileItemRepository.findById(first.getId())).isEmpty();
+        assertThat(fileItemRepository.findById(second.getId())).isEmpty();
+        assertThat(storedObjectRepository.findById(storedObjectId)).isEmpty();
+        assertThat(Files.exists(storedFile)).isFalse();
+    }
+
+    @Test
+    void nonOwnerDeleteRemovesOnlyFileItemAndKeepsStoredObjectAndPhysicalFile() throws Exception {
+        User owner = createUser("owner@test.local", PASSWORD);
+        User other = createUser("other@test.local", PASSWORD);
+        String ownerToken = loginAndGetAccessToken(owner.getEmail(), PASSWORD);
+        String otherToken = loginAndGetAccessToken(other.getEmail(), PASSWORD);
+
+        FileItemDto ownerUpload = upload(ownerToken, "owner.jpg", "image/jpeg", "owner-bytes".getBytes());
+        FileItemDto otherSeed = upload(otherToken, "seed.jpg", "image/jpeg", "seed-bytes".getBytes());
+        FileItem ownerItem = findFileItem(ownerUpload.getId());
+        FileItem otherSeedItem = findFileItem(otherSeed.getId());
+        Path storedFile = storedObjectPath(ownerItem.getStoredObject());
+
+        FileItem otherLogicalItem = fileItemRepository.save(FileItem.builder()
+                .user(other)
+                .folder(otherSeedItem.getFolder())
+                .storedObject(ownerItem.getStoredObject())
+                .originalName("other-logical.jpg")
+                .capturedAt(LocalDateTime.now())
+                .uploadedAt(LocalDateTime.now())
+                .build());
+
+        perform(delete("/api/v1/files/{id}", otherLogicalItem.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(otherToken)))
+                .andExpect(status().isNoContent());
+
+        assertThat(fileItemRepository.findById(otherLogicalItem.getId())).isEmpty();
+        assertThat(fileItemRepository.findById(ownerUpload.getId())).isPresent();
+        assertThat(storedObjectRepository.findById(ownerItem.getStoredObject().getId())).isPresent();
+        assertThat(Files.exists(storedFile)).isTrue();
     }
 
     @Test
@@ -256,7 +346,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void defaultFoldersStorageKeyAndFilenameSafetyAreApplied() throws Exception {
+    void defaultFoldersPhysicalPathAndFilenameSafetyAreApplied() throws Exception {
         createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
         FileItemDto image = upload(token, "..\\evil/../../photo.jpg", "image/jpeg", "image".getBytes());
@@ -269,25 +359,29 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         assertThat(folderRepository.findAll()).extracting("folderType")
                 .contains(FolderType.ROOT, FolderType.CAMERA, FolderType.FILES);
 
-        String storageKey = imageItem.getStoredObject().getStorageKey();
-        assertThat(Path.of(storageKey).isAbsolute()).isFalse();
-        assertThat(storageKey).doesNotContain("..");
-        assertThat(storageKey).doesNotContain("\\");
-        Path resolved = storageRoot().resolve(storageKey).normalize();
+        String filePath = imageItem.getStoredObject().getFilePath();
+        String filename = imageItem.getStoredObject().getFilename();
+        assertThat(Path.of(filePath).isAbsolute()).isFalse();
+        assertThat(filePath).doesNotContain("..");
+        assertThat(filePath).doesNotContain("\\");
+        assertThat(filename).doesNotContain("/");
+        assertThat(filename).doesNotContain("\\");
+        assertThat(filename).contains("_");
+        Path resolved = storedObjectPath(imageItem.getStoredObject());
         assertThat(resolved.startsWith(storageRoot())).isTrue();
     }
 
     @Test
-    void storageKeyFilenameComponentIsLimitedTo255Characters() throws Exception {
+    void physicalFilenameComponentIsLimitedTo255Characters() throws Exception {
         createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
         String longFilename = "a".repeat(300) + ".jpg";
 
         FileItemDto uploaded = upload(token, longFilename, "image/jpeg", "long".getBytes());
 
-        String storageKey = findFileItem(uploaded.getId()).getStoredObject().getStorageKey();
-        String filenameComponent = storageKey.substring(storageKey.lastIndexOf('/') + 1);
-        assertThat(filenameComponent.length()).isLessThanOrEqualTo(255);
+        String filename = findFileItem(uploaded.getId()).getStoredObject().getFilename();
+        assertThat(filename.length()).isLessThanOrEqualTo(255);
+        assertThat(filename).endsWith(".jpg");
     }
 
     @Test

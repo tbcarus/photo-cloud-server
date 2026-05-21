@@ -12,6 +12,11 @@ import ru.tbcarus.photocloudserver.model.dto.FileMetadataDto;
 public interface FileItemMapper {
 
     @Mapping(source = "folder.id", target = "folderId")
+    @Mapping(source = "originalName", target = "originalFilename")
+    @Mapping(source = "storedObject.detectedMimeType", target = "mimeType")
+    @Mapping(source = "storedObject.size", target = "size")
+    @Mapping(source = "storedObject.checksum", target = "checksum")
+    @Mapping(source = "storedObject.fileType", target = "fileType")
     FileItemDto toDto(FileItem fileItem);
 
     @Mapping(source = "FNumber", target = "fNumber")

@@ -52,26 +52,32 @@ public class FileItemService {
             throw new IllegalArgumentException("Файл пустой");
         }
 
-        String mimeType = file.getContentType();
-        if (mimeType == null || mimeType.isBlank()) {
+        String detectedMimeType = file.getContentType();
+        if (detectedMimeType == null || detectedMimeType.isBlank()) {
             throw new IllegalArgumentException("MIME-тип не определён");
         }
 
         byte[] fileBytes = file.getBytes();
         String checksum = FileUtils.calculateSHA256(fileBytes);
-        Optional<FileItem> duplicate = fileItemRepository.findByUserIdAndChecksum(user.getId(), checksum);
-        if (duplicate.isPresent()) {
-            return fileItemMapper.toDto(duplicate.get());
-        }
+        Optional<StoredObject> existingStoredObject = storedObjectRepository.findByUserIdAndChecksum(user.getId(), checksum);
 
+        String physicalMimeType = existingStoredObject.map(StoredObject::getDetectedMimeType).orElse(detectedMimeType);
         LocalDateTime uploadedAt = LocalDateTime.now();
-        FileType fileType = FileType.fromMimeType(mimeType);
-        ExtractedFileMetadata extractedMetadata = fileMetadataExtractor.extract(fileBytes, mimeType);
+        FileType fileType = existingStoredObject.map(StoredObject::getFileType).orElse(FileType.fromMimeType(detectedMimeType));
+        ExtractedFileMetadata extractedMetadata = fileMetadataExtractor.extract(fileBytes, physicalMimeType);
         LocalDateTime capturedAt = extractedMetadata.getCapturedAt() == null ? uploadedAt : extractedMetadata.getCapturedAt();
         Folder folder = folderService.getDefaultFolder(user, fileType);
-        String originalFilename = truncateOriginalFilename(filenameSanitizer.safeName(file.getOriginalFilename()));
-        String storageKey = storageKeyGenerator.generate(user.getId(), checksum, originalFilename, mimeType);
-        Path destination = storagePathResolver.resolve(storageKey);
+        String originalName = truncateOriginalName(filenameSanitizer.safeName(file.getOriginalFilename()));
+
+        if (existingStoredObject.isPresent()) {
+            FileItem saved = saveFileItem(user, folder, existingStoredObject.get(), originalName, capturedAt, uploadedAt, extractedMetadata);
+            return fileItemMapper.toDto(saved);
+        }
+
+        String filePath = storageKeyGenerator.generateFilePath(user.getId(), checksum);
+        String filename = storageKeyGenerator.generateFilename(originalName, detectedMimeType);
+        String fileExtension = filenameSanitizer.extension(originalName, detectedMimeType);
+        Path destination = storagePathResolver.resolve(filePath, filename);
 
         try {
             Files.createDirectories(destination.getParent());
@@ -80,19 +86,19 @@ public class FileItemService {
             }
 
             TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
-            FileItem saved = transactionTemplate.execute(status -> saveFileItem(
-                    user,
-                    folder,
-                    originalFilename,
-                    mimeType,
-                    file.getSize(),
-                    checksum,
-                    fileType,
-                    capturedAt,
-                    uploadedAt,
-                    storageKey,
-                    extractedMetadata
-            ));
+            FileItem saved = transactionTemplate.execute(status -> {
+                StoredObject storedObject = storedObjectRepository.save(StoredObject.builder()
+                        .user(user)
+                        .filePath(filePath)
+                        .filename(filename)
+                        .fileExtension(fileExtension)
+                        .checksum(checksum)
+                        .size(file.getSize())
+                        .detectedMimeType(detectedMimeType)
+                        .fileType(fileType)
+                        .build());
+                return saveFileItem(user, folder, storedObject, originalName, capturedAt, uploadedAt, extractedMetadata);
+            });
             return fileItemMapper.toDto(saved);
         } catch (RuntimeException | IOException ex) {
             Files.deleteIfExists(destination);
@@ -114,7 +120,8 @@ public class FileItemService {
     }
 
     public Resource getDownloadResource(FileItem fileItem) throws IOException {
-        Path path = storagePathResolver.resolve(fileItem.getStoredObject().getStorageKey());
+        StoredObject storedObject = fileItem.getStoredObject();
+        Path path = storagePathResolver.resolve(storedObject.getFilePath(), storedObject.getFilename());
         Resource resource = new UrlResource(path.toUri());
         if (!resource.exists() || !resource.isReadable()) {
             throw new FileItemNotFoundException(fileItem.getId());
@@ -124,12 +131,18 @@ public class FileItemService {
 
     public void deleteFileForCurrentUser(Long fileId, User user) {
         FileItem file = getFileForCurrentUser(fileId, user);
-        Path path = storagePathResolver.resolve(file.getStoredObject().getStorageKey());
         StoredObject storedObject = file.getStoredObject();
+        Path path = storagePathResolver.resolve(storedObject.getFilePath(), storedObject.getFilename());
+
+        if (!file.getUser().getId().equals(storedObject.getUser().getId())) {
+            fileItemRepository.delete(file);
+            return;
+        }
 
         TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
         transactionTemplate.executeWithoutResult(status -> {
-            fileItemRepository.delete(file);
+            // Владелец физического объекта удаляет все логические записи, которые на него ссылаются.
+            fileItemRepository.deleteAll(fileItemRepository.findAllByStoredObjectId(storedObject.getId()));
             fileItemRepository.flush();
             storedObjectRepository.delete(storedObject);
         });
@@ -147,29 +160,16 @@ public class FileItemService {
 
     private FileItem saveFileItem(User user,
                                   Folder folder,
-                                  String originalFilename,
-                                  String mimeType,
-                                  long size,
-                                  String checksum,
-                                  FileType fileType,
+                                  StoredObject storedObject,
+                                  String originalName,
                                   LocalDateTime capturedAt,
                                   LocalDateTime uploadedAt,
-                                  String storageKey,
                                   ExtractedFileMetadata extractedMetadata) {
-        StoredObject storedObject = storedObjectRepository.save(StoredObject.builder()
-                .user(user)
-                .storageKey(storageKey)
-                .build());
-
         FileItem fileItem = FileItem.builder()
                 .user(user)
                 .folder(folder)
                 .storedObject(storedObject)
-                .originalFilename(originalFilename)
-                .mimeType(mimeType)
-                .size(size)
-                .checksum(checksum)
-                .fileType(fileType)
+                .originalName(originalName)
                 .capturedAt(capturedAt)
                 .uploadedAt(uploadedAt)
                 .build();
@@ -204,7 +204,7 @@ public class FileItemService {
         return value == null ? null : value.stripTrailingZeros();
     }
 
-    private String truncateOriginalFilename(String originalFilename) {
-        return originalFilename.length() <= 255 ? originalFilename : originalFilename.substring(0, 255);
+    private String truncateOriginalName(String originalName) {
+        return originalName.length() <= 255 ? originalName : originalName.substring(0, 255);
     }
 }

@@ -15,6 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -30,6 +31,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import ru.tbcarus.photocloudserver.model.FileItem;
 import ru.tbcarus.photocloudserver.model.Role;
+import ru.tbcarus.photocloudserver.model.StoredObject;
 import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.model.dto.LoginResponse;
 import ru.tbcarus.photocloudserver.repository.EmailRequestRepository;
@@ -58,6 +60,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 public abstract class AbstractIntegrationTest {
 
     private static final Path TEST_STORAGE = createTestStorage();
@@ -182,11 +185,15 @@ public abstract class AbstractIntegrationTest {
     }
 
     protected void deletePhysicalFile(Long id) throws IOException {
-        Files.deleteIfExists(TEST_STORAGE.resolve(findFileItem(id).getStoredObject().getStorageKey()));
+        Files.deleteIfExists(storedObjectPath(findFileItem(id).getStoredObject()));
     }
 
     protected Path storageRoot() {
         return TEST_STORAGE;
+    }
+
+    protected Path storedObjectPath(StoredObject storedObject) {
+        return TEST_STORAGE.resolve(storedObject.getFilePath()).resolve(storedObject.getFilename()).normalize();
     }
 
     protected long storageFileCount() throws IOException {
