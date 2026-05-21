@@ -23,6 +23,11 @@ spring:
     username: ${SMTP_USERNAME}
     password: ${SMTP_PASSWORD}
     mail-from: ${SMTP_USERNAME}@yandex.ru
+  servlet:
+    multipart:
+      max-file-size: 110MB
+      max-request-size: 110MB
+      file-size-threshold: 0
 
 server:
   servlet:
@@ -35,6 +40,8 @@ token:
 
 storage:
   root: ${STORAGE_ROOT:storage} # корневая папка физического хранения файлов
+  max-file-size-bytes: 104857600
+  temp-dir: ${STORAGE_TEMP_DIR:${STORAGE_ROOT:storage}/tmp}
   physical-filename:
     original-name-max-length: 80
 

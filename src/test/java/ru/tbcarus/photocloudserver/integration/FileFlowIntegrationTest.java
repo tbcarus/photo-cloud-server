@@ -3,13 +3,18 @@ package ru.tbcarus.photocloudserver.integration;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.web.multipart.MultipartFile;
 import ru.tbcarus.photocloudserver.model.FileItem;
 import ru.tbcarus.photocloudserver.model.FileType;
 import ru.tbcarus.photocloudserver.model.FolderType;
 import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.model.dto.FileItemDto;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -27,12 +32,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class FileFlowIntegrationTest extends AbstractIntegrationTest {
 
     private static final String PASSWORD = "pass1";
+    private static final byte[] JPEG_BYTES = new byte[]{
+            (byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0x00, 0x10,
+            0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00,
+            0x00, 0x01, 0x00, 0x01, 0x00, 0x00, (byte) 0xFF, (byte) 0xD9
+    };
 
     @Test
     void uploadNewFileStoresMetadataFoldersAndPhysicalFile() throws Exception {
         createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
-        byte[] bytes = "image-bytes-1".getBytes();
+        byte[] bytes = JPEG_BYTES;
 
         FileItemDto response = upload(token, "photo.jpg", "image/jpeg", bytes);
 
@@ -86,6 +96,70 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         assertThat(fileItemRepository.findAll()).hasSize(2);
         assertThat(storedObjectRepository.findAll()).hasSize(1);
         assertThat(storageFileCount()).isEqualTo(storageFilesAfterFirstUpload);
+        assertThat(tempFileCount()).isZero();
+    }
+
+    @Test
+    void uploadDoesNotCallMultipartFileGetBytes() throws Exception {
+        var user = createUser("stream@test.local", PASSWORD);
+        byte[] bytes = "streamed-content".getBytes();
+        MultipartFile file = new NoGetBytesMultipartFile("stream.txt", bytes, "image/jpeg");
+
+        FileItemDto uploaded = fileItemService.uploadFile(file, user);
+
+        assertThat(uploaded.getId()).isNotNull();
+        assertThat(uploaded.getChecksum()).isEqualTo(sha256(bytes));
+        assertThat(uploaded.getSize()).isEqualTo((long) bytes.length);
+        assertThat(storageFileCount()).isEqualTo(1);
+        assertThat(tempFileCount()).isZero();
+    }
+
+    @Test
+    void uploadOverMaxFileSizeReturnsErrorAndRemovesTempFile() throws Exception {
+        createUser("user1@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
+        byte[] bytes = new byte[2048];
+
+        perform(multipart("/api/v1/files")
+                        .file(filePart("too-big.bin", "application/octet-stream", bytes))
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.code").value("FILE_TOO_LARGE"));
+
+        assertThat(fileItemRepository.findAll()).isEmpty();
+        assertThat(storedObjectRepository.findAll()).isEmpty();
+        assertThat(storageFileCount()).isZero();
+        assertThat(tempFileCount()).isZero();
+    }
+
+    @Test
+    void tempFileIsRemovedWhenStreamingFails() throws Exception {
+        var user = createUser("broken-stream@test.local", PASSWORD);
+        MultipartFile file = new FailingInputStreamMultipartFile("broken.bin", "broken".getBytes());
+
+        try {
+            fileItemService.uploadFile(file, user);
+        } catch (IOException ignored) {
+        }
+
+        assertThat(fileItemRepository.findAll()).isEmpty();
+        assertThat(storedObjectRepository.findAll()).isEmpty();
+        assertThat(storageFileCount()).isZero();
+        assertThat(tempFileCount()).isZero();
+    }
+
+    @Test
+    void mimeTypeIsDetectedFromContentInsteadOfMultipartHeader() throws Exception {
+        createUser("user1@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
+
+        FileItemDto uploaded = upload(token, "real-image.bin", "text/plain", JPEG_BYTES);
+        FileItem fileItem = findFileItem(uploaded.getId());
+
+        assertThat(uploaded.getMimeType()).isEqualTo("image/jpeg");
+        assertThat(uploaded.getFileType()).isEqualTo(FileType.IMAGE);
+        assertThat(fileItem.getStoredObject().getDetectedMimeType()).isEqualTo("image/jpeg");
+        assertThat(fileItem.getStoredObject().getFileType()).isEqualTo(FileType.IMAGE);
     }
 
     @Test
@@ -349,7 +423,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     void defaultFoldersPhysicalPathAndFilenameSafetyAreApplied() throws Exception {
         createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
-        FileItemDto image = upload(token, "..\\evil/../../photo.jpg", "image/jpeg", "image".getBytes());
+        FileItemDto image = upload(token, "..\\evil/../../photo.jpg", "image/jpeg", JPEG_BYTES);
         FileItemDto document = upload(token, "document.pdf", "application/pdf", "document".getBytes());
 
         FileItem imageItem = findFileItem(image.getId());
@@ -405,5 +479,40 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(uploaded.getMetadata()).isNull();
         assertThat(uploaded.getCapturedAt()).isEqualTo(uploaded.getUploadedAt());
+    }
+
+    private static class NoGetBytesMultipartFile extends MockMultipartFile {
+
+        NoGetBytesMultipartFile(String filename, byte[] content, String contentType) {
+            super("file", filename, contentType, content);
+        }
+
+        @Override
+        public byte[] getBytes() {
+            throw new AssertionError("getBytes must not be used by upload pipeline");
+        }
+    }
+
+    private static class FailingInputStreamMultipartFile extends MockMultipartFile {
+
+        FailingInputStreamMultipartFile(String filename, byte[] content) {
+            super("file", filename, "application/octet-stream", content);
+        }
+
+        @Override
+        public InputStream getInputStream() {
+            return new InputStream() {
+                private boolean firstRead = true;
+
+                @Override
+                public int read() throws IOException {
+                    if (firstRead) {
+                        firstRead = false;
+                        return 'x';
+                    }
+                    throw new IOException("stream failed");
+                }
+            };
+        }
     }
 }

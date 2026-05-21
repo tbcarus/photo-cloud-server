@@ -1,5 +1,7 @@
 package ru.tbcarus.photocloudserver.service.metadata;
 
+import java.nio.file.Path;
+
 public interface FileMetadataExtractor {
-    ExtractedFileMetadata extract(byte[] fileBytes, String mimeType);
+    ExtractedFileMetadata extract(Path file, String mimeType);
 }

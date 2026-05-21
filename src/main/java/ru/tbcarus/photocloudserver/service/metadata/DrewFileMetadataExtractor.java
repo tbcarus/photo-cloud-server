@@ -12,8 +12,8 @@ import com.drew.metadata.png.PngDirectory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Date;
@@ -23,12 +23,13 @@ import java.util.Date;
 public class DrewFileMetadataExtractor implements FileMetadataExtractor {
 
     @Override
-    public ExtractedFileMetadata extract(byte[] fileBytes, String mimeType) {
+    public ExtractedFileMetadata extract(Path file, String mimeType) {
         if (mimeType == null || !mimeType.toLowerCase().startsWith("image/")) {
             return ExtractedFileMetadata.builder().build();
         }
         try {
-            Metadata metadata = ImageMetadataReader.readMetadata(new ByteArrayInputStream(fileBytes));
+            // Читаем metadata из файла на диске, чтобы upload больше не держал весь файл в byte[] в памяти.
+            Metadata metadata = ImageMetadataReader.readMetadata(file.toFile());
             return ExtractedFileMetadata.builder()
                     .capturedAt(capturedAt(metadata))
                     .width(width(metadata))

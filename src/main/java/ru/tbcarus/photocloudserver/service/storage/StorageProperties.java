@@ -11,6 +11,8 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "storage")
 public class StorageProperties {
     private String root;
+    private long maxFileSizeBytes = 104857600L;
+    private String tempDir;
     private PhysicalFilename physicalFilename = new PhysicalFilename();
 
     @Getter

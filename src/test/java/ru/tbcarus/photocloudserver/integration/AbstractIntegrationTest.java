@@ -18,6 +18,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import ru.tbcarus.photocloudserver.service.FileItemService;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.RequestBuilder;
@@ -87,6 +88,9 @@ public abstract class AbstractIntegrationTest {
     protected FolderRepository folderRepository;
 
     @Autowired
+    protected FileItemService fileItemService;
+
+    @Autowired
     protected EmailRequestRepository emailRequestRepository;
 
     @Autowired
@@ -102,6 +106,8 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.datasource.password", POSTGRES::getPassword);
         registry.add("spring.datasource.driver-class-name", POSTGRES::getDriverClassName);
         registry.add("storage.root", () -> TEST_STORAGE.toString());
+        registry.add("storage.temp-dir", () -> TEST_STORAGE.resolve("tmp").toString());
+        registry.add("storage.max-file-size-bytes", () -> "1024");
     }
 
     @BeforeEach
@@ -201,6 +207,19 @@ public abstract class AbstractIntegrationTest {
             return 0;
         }
         try (var stream = Files.walk(TEST_STORAGE)) {
+            Path tempDir = TEST_STORAGE.resolve("tmp");
+            return stream.filter(Files::isRegularFile)
+                    .filter(path -> !path.startsWith(tempDir))
+                    .count();
+        }
+    }
+
+    protected long tempFileCount() throws IOException {
+        Path tempDir = TEST_STORAGE.resolve("tmp");
+        if (!Files.exists(tempDir)) {
+            return 0;
+        }
+        try (var stream = Files.walk(tempDir)) {
             return stream.filter(Files::isRegularFile).count();
         }
     }

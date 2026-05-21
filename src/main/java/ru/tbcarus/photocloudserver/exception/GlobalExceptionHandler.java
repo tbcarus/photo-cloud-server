@@ -9,6 +9,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import ru.tbcarus.photocloudserver.exception.dto.ErrorCode;
 import ru.tbcarus.photocloudserver.exception.dto.ErrorResponse;
 
@@ -94,6 +95,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleFileNotFound(FileNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(error(ErrorCode.NOT_FOUND, e.getMessage()));
+    }
+
+    @ExceptionHandler(FileSizeLimitExceededException.class)
+    public ResponseEntity<ErrorResponse> handleFileSizeLimitExceeded(FileSizeLimitExceededException e) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(error(ErrorCode.FILE_TOO_LARGE, e.getMessage()));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException e) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(error(ErrorCode.FILE_TOO_LARGE, "Multipart request exceeds configured limit"));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
