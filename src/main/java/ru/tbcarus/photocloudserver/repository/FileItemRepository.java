@@ -31,4 +31,6 @@ public interface FileItemRepository extends JpaRepository<FileItem, Long> {
     @Query("SELECT new ru.tbcarus.photocloudserver.model.dto.FileChecksumDto(f.id, f.originalName, f.storedObject.checksum) " +
             "FROM FileItem f WHERE f.user.id = :userId")
     List<FileChecksumDto> findAllChecksumsAndOriginalFilenamesByUserId(Long userId);
+
+    boolean existsByFolderId(Long folderId);
 }

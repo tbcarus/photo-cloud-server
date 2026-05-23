@@ -103,6 +103,24 @@ public class GlobalExceptionHandler {
                 .body(error(ErrorCode.FILE_TOO_LARGE, e.getMessage()));
     }
 
+    @ExceptionHandler(FolderNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleFolderNotFound(FolderNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(error(ErrorCode.NOT_FOUND, e.getMessage()));
+    }
+
+    @ExceptionHandler(FolderConflictException.class)
+    public ResponseEntity<ErrorResponse> handleFolderConflict(FolderConflictException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(error(ErrorCode.CONFLICT, e.getMessage()));
+    }
+
+    @ExceptionHandler(FolderOperationException.class)
+    public ResponseEntity<ErrorResponse> handleFolderOperation(FolderOperationException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(error(ErrorCode.BAD_REQUEST, e.getMessage()));
+    }
+
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ErrorResponse> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException e) {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
