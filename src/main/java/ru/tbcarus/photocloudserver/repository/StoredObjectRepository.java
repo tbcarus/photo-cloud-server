@@ -8,5 +8,5 @@ import java.util.Optional;
 
 @Repository
 public interface StoredObjectRepository extends JpaRepository<StoredObject, Long> {
-    Optional<StoredObject> findByUserIdAndChecksum(Long userId, String checksum);
+    Optional<StoredObject> findFirstByUserIdAndChecksumOrderByIdAsc(Long userId, String checksum);
 }

@@ -91,7 +91,7 @@ class FileItemServiceTest {
         MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", "content".getBytes());
 
         when(folderService.getDefaultFolder(user, FileType.DOCUMENT)).thenReturn(folder);
-        when(storedObjectRepository.findByUserIdAndChecksum(any(), any())).thenReturn(Optional.empty());
+        when(storedObjectRepository.findFirstByUserIdAndChecksumOrderByIdAsc(any(), any())).thenReturn(Optional.empty());
         when(storedObjectRepository.save(any())).thenThrow(new RuntimeException("db failed"));
 
         assertThatThrownBy(() -> fileItemService.uploadFile(file, user))
@@ -119,7 +119,7 @@ class FileItemServiceTest {
         MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", "content".getBytes());
 
         when(folderService.getDefaultFolder(user, FileType.DOCUMENT)).thenReturn(folder);
-        when(storedObjectRepository.findByUserIdAndChecksum(any(), any()))
+        when(storedObjectRepository.findFirstByUserIdAndChecksumOrderByIdAsc(any(), any()))
                 .thenReturn(Optional.empty(), Optional.of(existingStoredObject));
         when(storedObjectRepository.save(any())).thenThrow(new DataIntegrityViolationException("race"));
         when(fileItemRepository.save(any())).thenAnswer(invocation -> {

@@ -9,8 +9,10 @@ import java.time.LocalDateTime;
 @Entity
 @Table(
         name = "stored_object",
-        uniqueConstraints = @UniqueConstraint(name = "uk_stored_object_user_checksum", columnNames = {"user_id", "checksum"}),
-        indexes = @Index(name = "idx_stored_object_user", columnList = "user_id")
+        indexes = {
+                @Index(name = "idx_stored_object_user", columnList = "user_id"),
+                @Index(name = "idx_stored_object_user_checksum", columnList = "user_id,checksum")
+        }
 )
 @Getter
 @Setter

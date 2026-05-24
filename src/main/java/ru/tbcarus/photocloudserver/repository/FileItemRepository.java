@@ -19,6 +19,9 @@ public interface FileItemRepository extends JpaRepository<FileItem, Long> {
     Page<FileItem> findAllByUserId(Long userId, Pageable pageable);
 
     @EntityGraph(attributePaths = {"folder", "folder.parent", "storedObject", "metadata"})
+    Page<FileItem> findAllByUserIdAndFolderId(Long userId, Long folderId, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"folder", "folder.parent", "storedObject", "metadata"})
     Optional<FileItem> findByIdAndUserId(Long id, Long userId);
 
     @EntityGraph(attributePaths = {"folder", "folder.parent", "storedObject", "metadata"})
@@ -33,4 +36,8 @@ public interface FileItemRepository extends JpaRepository<FileItem, Long> {
     List<FileChecksumDto> findAllChecksumsAndOriginalFilenamesByUserId(Long userId);
 
     boolean existsByFolderId(Long folderId);
+
+    boolean existsByUserIdAndFolderIdAndOriginalNameIgnoreCase(Long userId, Long folderId, String originalName);
+
+    boolean existsByUserIdAndFolderIdAndOriginalNameIgnoreCaseAndIdNot(Long userId, Long folderId, String originalName, Long id);
 }

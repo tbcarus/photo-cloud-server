@@ -103,6 +103,12 @@ public class GlobalExceptionHandler {
                 .body(error(ErrorCode.FILE_TOO_LARGE, e.getMessage()));
     }
 
+    @ExceptionHandler(FileConflictException.class)
+    public ResponseEntity<ErrorResponse> handleFileConflict(FileConflictException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(error(ErrorCode.CONFLICT, e.getMessage()));
+    }
+
     @ExceptionHandler(FolderNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleFolderNotFound(FolderNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)

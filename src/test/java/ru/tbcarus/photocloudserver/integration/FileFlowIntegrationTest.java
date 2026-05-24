@@ -3,6 +3,7 @@ package ru.tbcarus.photocloudserver.integration;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.web.multipart.MultipartFile;
@@ -24,6 +25,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -97,6 +100,201 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         assertThat(storedObjectRepository.findAll()).hasSize(1);
         assertThat(storageFileCount()).isEqualTo(storageFilesAfterFirstUpload);
         assertThat(tempFileCount()).isZero();
+    }
+
+    @Test
+    void listFilesByFolderReturnsOnlyDirectFilesFromThatFolder() throws Exception {
+        createUser("folders-list@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("folders-list@test.local", PASSWORD);
+        Long rootId = getRootId(token);
+        Long firstFolderId = createFolder(token, rootId, "First").get("id").asLong();
+        Long secondFolderId = createFolder(token, rootId, "Second").get("id").asLong();
+        FileItemDto first = upload(token, "first.txt", "text/plain", "first".getBytes(), firstFolderId);
+        upload(token, "second.txt", "text/plain", "second".getBytes(), secondFolderId);
+
+        MvcResult result = perform(get("/api/v1/files")
+                        .param("folderId", firstFolderId.toString())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode items = objectMapper.readTree(result.getResponse().getContentAsString()).get("items");
+        assertThat(items).hasSize(1);
+        assertThat(items.get(0).get("id").asLong()).isEqualTo(first.getId());
+    }
+
+    @Test
+    void uploadCanTargetFolderAndDefaultUploadStillUsesSystemFolders() throws Exception {
+        createUser("upload-target@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("upload-target@test.local", PASSWORD);
+        Long rootId = getRootId(token);
+        Long targetFolderId = createFolder(token, rootId, "Target").get("id").asLong();
+
+        FileItemDto targeted = upload(token, "target.txt", "text/plain", "target".getBytes(), targetFolderId);
+        FileItemDto defaultUpload = upload(token, "default.txt", "text/plain", "default".getBytes());
+
+        assertThat(findFileItem(targeted.getId()).getFolder().getId()).isEqualTo(targetFolderId);
+        assertThat(findFileItem(defaultUpload.getId()).getFolder().getFolderType()).isEqualTo(FolderType.FILES);
+    }
+
+    @Test
+    void duplicateUploadNameConflictsOutsideCameraButCameraAllowsSameName() throws Exception {
+        createUser("duplicate-name@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("duplicate-name@test.local", PASSWORD);
+        upload(token, "same.txt", "text/plain", "one".getBytes());
+
+        perform(multipart("/api/v1/files")
+                        .file(filePart("same.txt", "text/plain", "two".getBytes()))
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"));
+
+        FileItemDto firstCamera = upload(token, "IMG_0001.jpg", "image/jpeg", JPEG_BYTES);
+        FileItemDto secondCamera = upload(token, "IMG_0001.jpg", "image/jpeg", JPEG_BYTES);
+
+        assertThat(firstCamera.getId()).isNotEqualTo(secondCamera.getId());
+        assertThat(findFileItem(firstCamera.getId()).getFolder().getFolderType()).isEqualTo(FolderType.CAMERA);
+        assertThat(findFileItem(secondCamera.getId()).getFolder().getFolderType()).isEqualTo(FolderType.CAMERA);
+    }
+
+    @Test
+    void copyCreatesNewStoredObjectPhysicalFileAndDoesNotUseDedup() throws Exception {
+        createUser("copy@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("copy@test.local", PASSWORD);
+        FileItemDto source = upload(token, "source.txt", "text/plain", "copy-content".getBytes());
+        FileItem sourceItem = findFileItem(source.getId());
+        Long sourceStoredObjectId = sourceItem.getStoredObject().getId();
+        long storageFilesBeforeCopy = storageFileCount();
+
+        MvcResult result = perform(post("/api/v1/files/{id}/copy", source.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"originalName":"source-copy.txt"}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        FileItemDto copied = objectMapper.readValue(result.getResponse().getContentAsString(), FileItemDto.class);
+        FileItem copiedItem = findFileItem(copied.getId());
+        assertThat(copiedItem.getStoredObject().getId()).isNotEqualTo(sourceStoredObjectId);
+        assertThat(copiedItem.getStoredObject().getChecksum()).isEqualTo(sourceItem.getStoredObject().getChecksum());
+        assertThat(Files.readAllBytes(storedObjectPath(copiedItem.getStoredObject()))).isEqualTo("copy-content".getBytes());
+        assertThat(storageFileCount()).isEqualTo(storageFilesBeforeCopy + 1);
+        assertThat(storedObjectRepository.findAll()).hasSize(2);
+    }
+
+    @Test
+    void copyInSameFolderWithoutNewNameConflictsOutsideCamera() throws Exception {
+        createUser("copy-conflict@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("copy-conflict@test.local", PASSWORD);
+        FileItemDto source = upload(token, "source.txt", "text/plain", "copy-conflict".getBytes());
+
+        perform(post("/api/v1/files/{id}/copy", source.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void moveChangesOnlyFolderAndKeepsStoredObjectAndPhysicalFile() throws Exception {
+        createUser("move-file@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("move-file@test.local", PASSWORD);
+        Long rootId = getRootId(token);
+        Long targetFolderId = createFolder(token, rootId, "Moved").get("id").asLong();
+        FileItemDto uploaded = upload(token, "move.txt", "text/plain", "move".getBytes());
+        FileItem before = findFileItem(uploaded.getId());
+        Long storedObjectId = before.getStoredObject().getId();
+        Path physicalFile = storedObjectPath(before.getStoredObject());
+
+        MvcResult result = perform(post("/api/v1/files/{id}/move", uploaded.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"targetFolderId":%d}
+                                """.formatted(targetFolderId)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        FileItemDto moved = objectMapper.readValue(result.getResponse().getContentAsString(), FileItemDto.class);
+        FileItem after = findFileItem(moved.getId());
+        assertThat(after.getFolder().getId()).isEqualTo(targetFolderId);
+        assertThat(after.getStoredObject().getId()).isEqualTo(storedObjectId);
+        assertThat(Files.exists(physicalFile)).isTrue();
+    }
+
+    @Test
+    void renameChangesOnlyOriginalNameAndKeepsPhysicalFilename() throws Exception {
+        createUser("rename-file@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("rename-file@test.local", PASSWORD);
+        FileItemDto uploaded = upload(token, "before.txt", "text/plain", "rename".getBytes());
+        FileItem before = findFileItem(uploaded.getId());
+        String physicalFilename = before.getStoredObject().getFilename();
+
+        MvcResult result = perform(patch("/api/v1/files/{id}", uploaded.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"originalName":"after.txt"}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        FileItemDto renamed = objectMapper.readValue(result.getResponse().getContentAsString(), FileItemDto.class);
+        FileItem after = findFileItem(renamed.getId());
+        assertThat(after.getOriginalName()).isEqualTo("after.txt");
+        assertThat(after.getStoredObject().getFilename()).isEqualTo(physicalFilename);
+    }
+
+    @Test
+    void renameConflictIsRejectedOutsideCamera() throws Exception {
+        createUser("rename-conflict@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("rename-conflict@test.local", PASSWORD);
+        FileItemDto first = upload(token, "first.txt", "text/plain", "first".getBytes());
+        upload(token, "second.txt", "text/plain", "second".getBytes());
+
+        perform(patch("/api/v1/files/{id}", first.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"originalName":"second.txt"}
+                                """))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void foreignFolderCannotBeUsedForListUploadCopyOrMove() throws Exception {
+        createUser("file-owner@test.local", PASSWORD);
+        createUser("folder-owner@test.local", PASSWORD);
+        String fileOwnerToken = loginAndGetAccessToken("file-owner@test.local", PASSWORD);
+        String folderOwnerToken = loginAndGetAccessToken("folder-owner@test.local", PASSWORD);
+        Long foreignRootId = getRootId(folderOwnerToken);
+        FileItemDto uploaded = upload(fileOwnerToken, "private.txt", "text/plain", "private".getBytes());
+
+        perform(get("/api/v1/files")
+                        .param("folderId", foreignRootId.toString())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(fileOwnerToken)))
+                .andExpect(status().isNotFound());
+        perform(multipart("/api/v1/files")
+                        .file(filePart("target.txt", "text/plain", "target".getBytes()))
+                        .param("folderId", foreignRootId.toString())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(fileOwnerToken)))
+                .andExpect(status().isNotFound());
+        perform(post("/api/v1/files/{id}/copy", uploaded.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(fileOwnerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"targetFolderId":%d,"originalName":"copy.txt"}
+                                """.formatted(foreignRootId)))
+                .andExpect(status().isNotFound());
+        perform(post("/api/v1/files/{id}/move", uploaded.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(fileOwnerToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"targetFolderId":%d}
+                                """.formatted(foreignRootId)))
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -491,6 +689,37 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         public byte[] getBytes() {
             throw new AssertionError("getBytes must not be used by upload pipeline");
         }
+    }
+
+    private FileItemDto upload(String accessToken, String filename, String contentType, byte[] bytes, Long folderId) throws Exception {
+        MvcResult result = perform(multipart("/api/v1/files")
+                        .file(filePart(filename, contentType, bytes))
+                        .param("folderId", folderId.toString())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(accessToken)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        return objectMapper.readValue(result.getResponse().getContentAsString(), FileItemDto.class);
+    }
+
+    private Long getRootId(String token) throws Exception {
+        MvcResult result = perform(get("/api/v1/folders/root")
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asLong();
+    }
+
+    private JsonNode createFolder(String token, Long parentId, String name) throws Exception {
+        MvcResult result = perform(post("/api/v1/folders")
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"parentId":%d,"name":"%s"}
+                                """.formatted(parentId, name)))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
     private static class FailingInputStreamMultipartFile extends MockMultipartFile {
