@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import ru.tbcarus.photocloudserver.model.FileItem;
 import ru.tbcarus.photocloudserver.model.User;
+import ru.tbcarus.photocloudserver.model.dto.ChecksumExistsRequest;
+import ru.tbcarus.photocloudserver.model.dto.ChecksumExistsResponse;
 import ru.tbcarus.photocloudserver.model.dto.CopyFileRequest;
 import ru.tbcarus.photocloudserver.model.dto.FileChecksumDto;
 import ru.tbcarus.photocloudserver.model.dto.FileItemDto;
@@ -24,6 +26,7 @@ import ru.tbcarus.photocloudserver.model.dto.MoveFileRequest;
 import ru.tbcarus.photocloudserver.model.dto.PageResponse;
 import ru.tbcarus.photocloudserver.model.dto.RenameFileRequest;
 import ru.tbcarus.photocloudserver.service.FileItemService;
+import ru.tbcarus.photocloudserver.service.sync.ChecksumSyncService;
 
 import java.io.IOException;
 import java.util.List;
@@ -41,8 +44,10 @@ public class FileController {
     public static final String MOVE_URL = FILE_ID_URL + "/move";
     public static final String COPY_URL = FILE_ID_URL + "/copy";
     public static final String CHECKSUMS_URL = "/checksums";
+    public static final String CHECKSUMS_EXISTS_URL = CHECKSUMS_URL + "/exists";
 
     private final FileItemService fileItemService;
+    private final ChecksumSyncService checksumSyncService;
 
     // Старый upload endpoint сохраняется для совместимости; folderId можно передать как optional multipart-параметр.
     @Operation(summary = "Upload file")
@@ -151,5 +156,14 @@ public class FileController {
     @GetMapping(CHECKSUMS_URL)
     public ResponseEntity<List<FileChecksumDto>> getChecksums(@AuthenticationPrincipal User user) {
         return ResponseEntity.ok(fileItemService.getChecksumsForUser(user.getId()));
+    }
+
+    // Ответ намеренно минимальный: клиенту на этом этапе нужно только решение "загружать / не загружать".
+    @Operation(summary = "Check existing checksums")
+    @PostMapping(CHECKSUMS_EXISTS_URL)
+    public ResponseEntity<ChecksumExistsResponse> checkExistingChecksums(
+            @RequestBody @Valid ChecksumExistsRequest request,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(checksumSyncService.checkExisting(user, request));
     }
 }

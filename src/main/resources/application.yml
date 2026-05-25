@@ -45,6 +45,10 @@ storage:
   physical-filename:
     original-name-max-length: 80
 
+sync:
+  checksum-exists:
+    max-batch-size: 500
+
 logging:
   level:
     liquibase: info

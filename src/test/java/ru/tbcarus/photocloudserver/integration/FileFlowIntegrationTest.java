@@ -19,6 +19,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -504,6 +505,122 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void checksumExistsRequiresAuthentication() throws Exception {
+        perform(post("/api/v1/files/checksums/exists")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(checksumExistsBody(List.of("a".repeat(64)))))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void checksumExistsValidatesRequestBody() throws Exception {
+        createUser("checksum-validation@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("checksum-validation@test.local", PASSWORD);
+
+        perform(post("/api/v1/files/checksums/exists")
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"checksums":null}
+                                """))
+                .andExpect(status().isBadRequest());
+        perform(post("/api/v1/files/checksums/exists")
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"checksums":[]}
+                                """))
+                .andExpect(status().isBadRequest());
+        perform(post("/api/v1/files/checksums/exists")
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(checksumExistsBody(List.of("a".repeat(63)))))
+                .andExpect(status().isBadRequest());
+        perform(post("/api/v1/files/checksums/exists")
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(checksumExistsBody(List.of("g".repeat(64)))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void checksumExistsRejectsBatchOverLimit() throws Exception {
+        createUser("checksum-batch@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("checksum-batch@test.local", PASSWORD);
+        List<String> checksums = new ArrayList<>();
+        for (int i = 0; i < 501; i++) {
+            checksums.add("%064x".formatted(i));
+        }
+
+        perform(post("/api/v1/files/checksums/exists")
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(checksumExistsBody(checksums)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void checksumExistsReturnsExistingAndMissingChecksumsOnlyForCurrentUser() throws Exception {
+        createUser("checksum-user@test.local", PASSWORD);
+        createUser("checksum-other@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("checksum-user@test.local", PASSWORD);
+        String otherToken = loginAndGetAccessToken("checksum-other@test.local", PASSWORD);
+        FileItemDto current = upload(token, "current.txt", "text/plain", "current".getBytes());
+        FileItemDto other = upload(otherToken, "other.txt", "text/plain", "other".getBytes());
+        String missing = "f".repeat(64);
+
+        JsonNode response = checksumExists(token, List.of(current.getChecksum(), other.getChecksum(), missing));
+
+        assertThat(texts(response.get("existing"))).containsExactly(current.getChecksum());
+        assertThat(texts(response.get("missing"))).containsExactly(other.getChecksum(), missing);
+        assertThat(response.toString()).doesNotContain("fileId");
+        assertThat(response.toString()).doesNotContain("folderId");
+        assertThat(response.toString()).doesNotContain("originalName");
+        assertThat(response.toString()).doesNotContain("storedObject");
+    }
+
+    @Test
+    void checksumExistsHandlesAllMissingAllExistingDuplicatesAndUppercase() throws Exception {
+        createUser("checksum-cases@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("checksum-cases@test.local", PASSWORD);
+        FileItemDto first = upload(token, "first.txt", "text/plain", "first".getBytes());
+        FileItemDto second = upload(token, "second.txt", "text/plain", "second".getBytes());
+
+        JsonNode allMissing = checksumExists(token, List.of("a".repeat(64), "b".repeat(64)));
+        assertThat(allMissing.get("existing")).isEmpty();
+        assertThat(texts(allMissing.get("missing"))).containsExactly("a".repeat(64), "b".repeat(64));
+
+        JsonNode allExisting = checksumExists(token, List.of(first.getChecksum(), second.getChecksum()));
+        assertThat(texts(allExisting.get("existing"))).containsExactly(first.getChecksum(), second.getChecksum());
+        assertThat(allExisting.get("missing")).isEmpty();
+
+        JsonNode normalized = checksumExists(token, List.of(first.getChecksum().toUpperCase(), first.getChecksum(), second.getChecksum()));
+        assertThat(texts(normalized.get("existing"))).containsExactly(first.getChecksum(), second.getChecksum());
+        assertThat(normalized.get("missing")).isEmpty();
+    }
+
+    @Test
+    void checksumExistsReturnsChecksumOnceWhenSeveralStoredObjectsHaveSameChecksum() throws Exception {
+        createUser("checksum-copy@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("checksum-copy@test.local", PASSWORD);
+        FileItemDto source = upload(token, "source.txt", "text/plain", "same-physical-content".getBytes());
+
+        perform(post("/api/v1/files/{id}/copy", source.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"originalName":"source-copy.txt"}
+                                """))
+                .andExpect(status().isOk());
+
+        assertThat(storedObjectRepository.findAll()).hasSize(2);
+        JsonNode response = checksumExists(token, List.of(source.getChecksum(), source.getChecksum().toUpperCase()));
+
+        assertThat(texts(response.get("existing"))).containsExactly(source.getChecksum());
+        assertThat(response.get("missing")).isEmpty();
+    }
+
+    @Test
     void deleteRemovesDatabaseRowsAndPhysicalFileWithoutBody() throws Exception {
         createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
@@ -720,6 +837,26 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private JsonNode checksumExists(String token, List<String> checksums) throws Exception {
+        MvcResult result = perform(post("/api/v1/files/checksums/exists")
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(checksumExistsBody(checksums)))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private String checksumExistsBody(List<String> checksums) throws Exception {
+        return objectMapper.writeValueAsString(java.util.Map.of("checksums", checksums));
+    }
+
+    private List<String> texts(JsonNode arrayNode) {
+        List<String> values = new ArrayList<>();
+        arrayNode.forEach(node -> values.add(node.asText()));
+        return values;
     }
 
     private static class FailingInputStreamMultipartFile extends MockMultipartFile {
