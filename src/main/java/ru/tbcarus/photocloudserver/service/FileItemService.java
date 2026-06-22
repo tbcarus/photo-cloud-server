@@ -94,17 +94,20 @@ public class FileItemService {
             LocalDateTime capturedAt = extractedMetadata.getCapturedAt() == null ? uploadedAt : extractedMetadata.getCapturedAt();
             Folder folder = resolveTargetFolder(user, folderId, fileType);
             String originalName = filenameSanitizer.limitOriginalNameWithExtension(file.getOriginalFilename(), 255);
-            // Сначала проверяем логическое имя: dedup не должен создавать FileItem, который нарушает правила папки.
-            ensureFileNameAvailable(user.getId(), folder, originalName, null);
 
-            Optional<StoredObject> existingStoredObject = storedObjectRepository.findFirstByUserIdAndChecksumOrderByIdAsc(user.getId(), checksum);
-            if (existingStoredObject.isPresent()) {
-                // При дедупликации физический объект уже есть, поэтому временный файл больше не нужен.
+            // Дубль определяется как user + folder + checksum: если такой файл уже есть в этой папке,
+            // upload идемпотентен — не создаём ни новый StoredObject, ни новый FileItem.
+            // Тот же checksum в другой папке дублем не считается и приведёт к новой загрузке.
+            Optional<FileItem> existingInFolder = fileItemRepository
+                    .findFirstByUserIdAndFolderIdAndChecksumOrderByIdAsc(user.getId(), folder.getId(), checksum);
+            if (existingInFolder.isPresent()) {
                 deleteIfExists(tempFile);
                 tempFile = null;
-                FileItem saved = saveFileItem(user, folder, existingStoredObject.get(), originalName, capturedAt, uploadedAt, extractedMetadata);
-                return fileItemMapper.toDto(saved);
+                return fileItemMapper.toDto(existingInFolder.get());
             }
+
+            // Имя проверяем только для действительно новой загрузки в папку.
+            ensureFileNameAvailable(user.getId(), folder, originalName, null);
 
             String filePath = storageKeyGenerator.generateFilePath(user.getId(), checksum);
             String filename = storageKeyGenerator.generateFilename(originalName, detectedMimeType);
@@ -134,13 +137,13 @@ public class FileItemService {
                 );
                 return fileItemMapper.toDto(saved);
             } catch (DataIntegrityViolationException ex) {
-                // TODO: После разрешения независимых copy StoredObject больше не уникален по checksum.
-                // Для строгой защиты upload от race потребуется отдельный механизм блокировок или ключ дедупликации.
+                // Гонка: параллельный upload уже создал FileItem с таким checksum в этой папке (уникальность user+folder+checksum).
+                // Свой только что перенесённый физический файл удаляем и возвращаем уже существующий FileItem.
                 deleteIfExists(finalFile);
-                StoredObject racedStoredObject = storedObjectRepository.findFirstByUserIdAndChecksumOrderByIdAsc(user.getId(), checksum)
+                FileItem racedFileItem = fileItemRepository
+                        .findFirstByUserIdAndFolderIdAndChecksumOrderByIdAsc(user.getId(), folder.getId(), checksum)
                         .orElseThrow(() -> ex);
-                FileItem saved = saveFileItem(user, folder, racedStoredObject, originalName, capturedAt, uploadedAt, extractedMetadata);
-                return fileItemMapper.toDto(saved);
+                return fileItemMapper.toDto(racedFileItem);
             } catch (RuntimeException ex) {
                 // Если БД упала после move, удаляем уже перенесённый final-файл, чтобы не оставить orphan на диске.
                 deleteIfExists(finalFile);
@@ -218,6 +221,8 @@ public class FileItemService {
                 : normalizeOriginalName(request.originalName());
 
         ensureFileNameAvailable(user.getId(), targetFolder, originalName, null);
+        // Дубль логического файла в папке запрещён (user + folder + checksum); copy не создаёт дубль в той же папке.
+        ensureChecksumAvailableInFolder(user.getId(), targetFolder, sourceStoredObject.getChecksum());
 
         Path sourcePath = storagePathResolver.resolve(sourceStoredObject.getFilePath(), sourceStoredObject.getFilename());
         String filePath = storageKeyGenerator.generateFilePath(user.getId(), sourceStoredObject.getChecksum());
@@ -301,6 +306,12 @@ public class FileItemService {
         }
     }
 
+    private void ensureChecksumAvailableInFolder(Long userId, Folder folder, String checksum) {
+        if (fileItemRepository.findFirstByUserIdAndFolderIdAndChecksumOrderByIdAsc(userId, folder.getId(), checksum).isPresent()) {
+            throw new FileConflictException("File with this checksum already exists in folder");
+        }
+    }
+
     private String normalizeOriginalName(String originalName) {
         String normalized = originalName == null ? "" : originalName.trim();
         if (normalized.isBlank()) {
@@ -373,6 +384,8 @@ public class FileItemService {
                 .user(user)
                 .folder(folder)
                 .storedObject(storedObject)
+                // TODO: при изменении модели хранения следить, чтобы FileItem.checksum оставался синхронизирован со StoredObject.checksum.
+                .checksum(storedObject.getChecksum())
                 .originalName(originalName)
                 .capturedAt(capturedAt)
                 .uploadedAt(uploadedAt)
@@ -410,6 +423,7 @@ public class FileItemService {
                     .user(user)
                     .folder(folder)
                     .storedObject(copiedStoredObject)
+                    .checksum(copiedStoredObject.getChecksum())
                     .originalName(originalName)
                     .capturedAt(sourceFile.getCapturedAt())
                     .uploadedAt(LocalDateTime.now())

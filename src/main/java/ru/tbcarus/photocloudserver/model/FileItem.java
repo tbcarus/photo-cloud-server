@@ -11,7 +11,9 @@ import java.time.LocalDateTime;
         indexes = {
                 @Index(name = "idx_file_item_user_captured_uploaded_id", columnList = "user_id,captured_at,uploaded_at,id"),
                 @Index(name = "idx_file_item_folder", columnList = "folder_id"),
-                @Index(name = "idx_file_item_stored_object", columnList = "stored_object_id")
+                @Index(name = "idx_file_item_stored_object", columnList = "stored_object_id"),
+                // Уникальность логического файла в папке: один checksum в одной папке пользователя не дублируется.
+                @Index(name = "uk_file_item_user_folder_checksum", columnList = "user_id,folder_id,checksum", unique = true)
         }
 )
 @Getter
@@ -36,6 +38,10 @@ public class FileItem {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "stored_object_id", nullable = false)
     private StoredObject storedObject;
+
+    // Checksum дублируется из StoredObject для проверки уникальности логического файла в папке.
+    @Column(nullable = false, length = 64)
+    private String checksum;
 
     @Column(name = "original_name", nullable = false, length = 255)
     private String originalName;

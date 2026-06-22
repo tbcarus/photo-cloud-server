@@ -70,13 +70,19 @@ Upload использует один pipeline для `POST /files` и `POST /fil
 8. Выбирает target folder:
    - если `folderId` передан, использует эту папку;
    - если `folderId` не передан, `IMAGE`/`VIDEO` идут в `CAMERA`, остальные типы в `FILES`.
-9. Проверяет конфликт `originalName` в папке.
-10. Ищет существующий `StoredObject` текущего пользователя по checksum.
-11. Если `StoredObject` найден, удаляет temp file и создает новый `FileItem`, ссылающийся на существующий `StoredObject`.
-12. Если `StoredObject` не найден, переносит temp file в финальное physical location, создает `StoredObject` и `FileItem`.
-13. При ошибках выполняет cleanup temp/final файла.
+9. Проверяет дубликат в target folder по `user + folder + checksum`.
+   - Если в этой папке уже есть `FileItem` с таким checksum, удаляет temp file и возвращает существующий `FileItem` (upload идемпотентен для папки). Новый `StoredObject`/`FileItem` не создаются.
+10. Если дубликата в папке нет, проверяет конфликт `originalName` в папке.
+11. Переносит temp file в финальное physical location, создает **новый** `StoredObject` и `FileItem`, даже если тот же checksum уже есть в другой папке пользователя.
+12. При ошибках выполняет cleanup temp/final файла.
 
-Важно: upload dedup работает по `StoredObject(user_id, checksum)`, но не отменяет создание новой логической записи. Повторная загрузка тех же байтов в допустимую папку создает новый `FileItem` на существующий `StoredObject`.
+Важно: дубль файла определяется как `user + folder + checksum` (по `FileItem`).
+
+- Повторная загрузка тех же байтов в ту же папку возвращает существующий `FileItem` — дубль не создается.
+- Тот же checksum в другой папке дублем не считается: создается новый `StoredObject` + новый `FileItem`.
+- Одинаковый файл в разных папках = независимые `StoredObject`, что согласуется с delete logic (удаление файла в одной папке не затрагивает другую).
+
+TODO: server-side copy без повторной передачи байтов для ручной загрузки в другую папку — отдельный будущий endpoint/этап.
 
 ## Правила имен
 
@@ -225,6 +231,7 @@ Request:
 
 - copy dedup не использует;
 - даже при одинаковом checksum создается новый `StoredObject`;
+- copy подчиняется правилу `user + folder + checksum`: если в target folder уже есть `FileItem` с таким checksum, возвращается `409 CONFLICT` и дубль не создается. Это значит, что copy в исходную папку (тот же checksum) всегда конфликтует — для копии нужен `targetFolderId` другой папки;
 - metadata копируется из исходного `FileItem`;
 - физический файл копируется в object storage.
 

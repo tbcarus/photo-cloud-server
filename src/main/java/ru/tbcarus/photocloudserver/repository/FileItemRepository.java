@@ -9,8 +9,10 @@ import org.springframework.stereotype.Repository;
 import ru.tbcarus.photocloudserver.model.FileItem;
 import ru.tbcarus.photocloudserver.model.dto.FileChecksumDto;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Repository
 public interface FileItemRepository extends JpaRepository<FileItem, Long> {
@@ -34,6 +36,19 @@ public interface FileItemRepository extends JpaRepository<FileItem, Long> {
     @Query("SELECT new ru.tbcarus.photocloudserver.model.dto.FileChecksumDto(f.id, f.originalName, f.storedObject.checksum) " +
             "FROM FileItem f WHERE f.user.id = :userId")
     List<FileChecksumDto> findAllChecksumsAndOriginalFilenamesByUserId(Long userId);
+
+    // Дубль логического файла определяется как user + folder + checksum; одинаковый checksum в другой папке дублем не считается.
+    @EntityGraph(attributePaths = {"folder", "folder.parent", "storedObject", "metadata"})
+    Optional<FileItem> findFirstByUserIdAndFolderIdAndChecksumOrderByIdAsc(Long userId, Long folderId, String checksum);
+
+    @Query("""
+            SELECT DISTINCT lower(f.checksum)
+            FROM FileItem f
+            WHERE f.user.id = :userId
+              AND f.folder.id = :folderId
+              AND lower(f.checksum) IN :checksums
+            """)
+    Set<String> findExistingChecksumsInFolder(Long userId, Long folderId, Collection<String> checksums);
 
     boolean existsByFolderId(Long folderId);
 

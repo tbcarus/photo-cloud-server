@@ -220,6 +220,7 @@ class FolderApiIntegrationTest extends AbstractIntegrationTest {
                 .user(user)
                 .folder(folderWithFile)
                 .storedObject(seed.getStoredObject())
+                .checksum(seed.getStoredObject().getChecksum())
                 .originalName("logical-copy.jpg")
                 .capturedAt(LocalDateTime.now())
                 .uploadedAt(LocalDateTime.now())

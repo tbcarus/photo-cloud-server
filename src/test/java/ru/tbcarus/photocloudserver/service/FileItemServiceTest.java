@@ -23,6 +23,7 @@ import ru.tbcarus.photocloudserver.service.storage.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -91,7 +92,8 @@ class FileItemServiceTest {
         MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", "content".getBytes());
 
         when(folderService.getDefaultFolder(user, FileType.DOCUMENT)).thenReturn(folder);
-        when(storedObjectRepository.findFirstByUserIdAndChecksumOrderByIdAsc(any(), any())).thenReturn(Optional.empty());
+        when(fileItemRepository.findFirstByUserIdAndFolderIdAndChecksumOrderByIdAsc(any(), any(), any()))
+                .thenReturn(Optional.empty());
         when(storedObjectRepository.save(any())).thenThrow(new RuntimeException("db failed"));
 
         assertThatThrownBy(() -> fileItemService.uploadFile(file, user))
@@ -102,7 +104,7 @@ class FileItemServiceTest {
     }
 
     @Test
-    void raceConditionRemovesCurrentFinalFileAndUsesExistingStoredObject() throws Exception {
+    void raceConditionRemovesCurrentFinalFileAndReturnsExistingFileItem() throws Exception {
         User user = User.builder().id(1L).email("user@test.local").build();
         Folder folder = Folder.builder().id(1L).user(user).name("Files").folderType(FolderType.FILES).build();
         StoredObject existingStoredObject = StoredObject.builder()
@@ -116,17 +118,23 @@ class FileItemServiceTest {
                 .detectedMimeType("text/plain")
                 .fileType(FileType.DOCUMENT)
                 .build();
+        FileItem racedFileItem = FileItem.builder()
+                .id(42L)
+                .user(user)
+                .folder(folder)
+                .storedObject(existingStoredObject)
+                .checksum("checksum")
+                .originalName("note.txt")
+                .capturedAt(LocalDateTime.now())
+                .uploadedAt(LocalDateTime.now())
+                .build();
         MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", "content".getBytes());
 
         when(folderService.getDefaultFolder(user, FileType.DOCUMENT)).thenReturn(folder);
-        when(storedObjectRepository.findFirstByUserIdAndChecksumOrderByIdAsc(any(), any()))
-                .thenReturn(Optional.empty(), Optional.of(existingStoredObject));
+        // Первый вызов (idempotency-проверка) — пусто; второй (после гонки в catch) — уже созданный FileItem.
+        when(fileItemRepository.findFirstByUserIdAndFolderIdAndChecksumOrderByIdAsc(any(), any(), any()))
+                .thenReturn(Optional.empty(), Optional.of(racedFileItem));
         when(storedObjectRepository.save(any())).thenThrow(new DataIntegrityViolationException("race"));
-        when(fileItemRepository.save(any())).thenAnswer(invocation -> {
-            FileItem fileItem = invocation.getArgument(0);
-            fileItem.setId(42L);
-            return fileItem;
-        });
 
         var response = fileItemService.uploadFile(file, user);
 

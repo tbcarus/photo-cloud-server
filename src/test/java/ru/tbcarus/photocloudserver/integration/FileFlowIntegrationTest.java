@@ -84,7 +84,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void duplicateUploadCreatesNewFileItemWithoutDuplicatingPhysicalStorageOrStoredObject() throws Exception {
+    void duplicateUploadIntoSameFolderReturnsExistingFileItemWithoutCreatingDuplicates() throws Exception {
         var user = createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
         byte[] bytes = "same-content".getBytes();
@@ -93,11 +93,11 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         long storageFilesAfterFirstUpload = storageFileCount();
         FileItemDto second = upload(token, "second-name.jpg", "image/jpeg", bytes);
 
-        assertThat(second.getId()).isNotEqualTo(first.getId());
+        // user + folder + checksum уже есть в этой папке → upload идемпотентен, возвращается существующий FileItem.
+        assertThat(second.getId()).isEqualTo(first.getId());
+        assertThat(second.getOriginalFilename()).isEqualTo("first.jpg");
         assertThat(second.getChecksum()).isEqualTo(first.getChecksum());
-        assertThat(findFileItem(second.getId()).getStoredObject().getId())
-                .isEqualTo(findFileItem(first.getId()).getStoredObject().getId());
-        assertThat(fileItemRepository.findAll()).hasSize(2);
+        assertThat(fileItemRepository.findAll()).hasSize(1);
         assertThat(storedObjectRepository.findAll()).hasSize(1);
         assertThat(storageFileCount()).isEqualTo(storageFilesAfterFirstUpload);
         assertThat(tempFileCount()).isZero();
@@ -139,29 +139,54 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void duplicateUploadNameConflictsOutsideCameraButCameraAllowsSameName() throws Exception {
+    void uploadSameContentIntoDifferentFolderCreatesNewStoredObjectAndFileItem() throws Exception {
+        createUser("multi-folder@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("multi-folder@test.local", PASSWORD);
+        Long rootId = getRootId(token);
+        Long targetFolderId = createFolder(token, rootId, "Second").get("id").asLong();
+        byte[] bytes = "shared-bytes".getBytes();
+
+        FileItemDto first = upload(token, "a.txt", "text/plain", bytes);
+        FileItemDto second = upload(token, "a.txt", "text/plain", bytes, targetFolderId);
+
+        // Тот же checksum в другой папке дублем не считается → новый StoredObject + новый FileItem.
+        assertThat(second.getId()).isNotEqualTo(first.getId());
+        assertThat(second.getFolderId()).isEqualTo(targetFolderId);
+        assertThat(second.getChecksum()).isEqualTo(first.getChecksum());
+        assertThat(findFileItem(second.getId()).getStoredObject().getId())
+                .isNotEqualTo(findFileItem(first.getId()).getStoredObject().getId());
+        assertThat(fileItemRepository.findAll()).hasSize(2);
+        assertThat(storedObjectRepository.findAll()).hasSize(2);
+        assertThat(storageFileCount()).isEqualTo(2);
+    }
+
+    @Test
+    void duplicateNameConflictsOutsideCameraAndCameraIsIdempotentPerChecksum() throws Exception {
         createUser("duplicate-name@test.local", PASSWORD);
         String token = loginAndGetAccessToken("duplicate-name@test.local", PASSWORD);
         upload(token, "same.txt", "text/plain", "one".getBytes());
 
+        // Вне CAMERA конфликт имени при другом содержимом остаётся 409.
         perform(multipart("/api/v1/files")
                         .file(filePart("same.txt", "text/plain", "two".getBytes()))
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CONFLICT"));
 
+        // Повторная загрузка того же файла в CAMERA идемпотентна: user + folder + checksum → существующий FileItem.
         FileItemDto firstCamera = upload(token, "IMG_0001.jpg", "image/jpeg", JPEG_BYTES);
-        FileItemDto secondCamera = upload(token, "IMG_0001.jpg", "image/jpeg", JPEG_BYTES);
+        FileItemDto sameAgain = upload(token, "IMG_0001.jpg", "image/jpeg", JPEG_BYTES);
 
-        assertThat(firstCamera.getId()).isNotEqualTo(secondCamera.getId());
+        assertThat(sameAgain.getId()).isEqualTo(firstCamera.getId());
         assertThat(findFileItem(firstCamera.getId()).getFolder().getFolderType()).isEqualTo(FolderType.CAMERA);
-        assertThat(findFileItem(secondCamera.getId()).getFolder().getFolderType()).isEqualTo(FolderType.CAMERA);
     }
 
     @Test
-    void copyCreatesNewStoredObjectPhysicalFileAndDoesNotUseDedup() throws Exception {
+    void copyCreatesNewStoredObjectPhysicalFileInAnotherFolderAndDoesNotUseDedup() throws Exception {
         createUser("copy@test.local", PASSWORD);
         String token = loginAndGetAccessToken("copy@test.local", PASSWORD);
+        Long rootId = getRootId(token);
+        Long targetFolderId = createFolder(token, rootId, "CopyTarget").get("id").asLong();
         FileItemDto source = upload(token, "source.txt", "text/plain", "copy-content".getBytes());
         FileItem sourceItem = findFileItem(source.getId());
         Long sourceStoredObjectId = sourceItem.getStoredObject().getId();
@@ -171,14 +196,16 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"originalName":"source-copy.txt"}
-                                """))
+                                {"targetFolderId":%d,"originalName":"source-copy.txt"}
+                                """.formatted(targetFolderId)))
                 .andExpect(status().isOk())
                 .andReturn();
 
         FileItemDto copied = objectMapper.readValue(result.getResponse().getContentAsString(), FileItemDto.class);
         FileItem copiedItem = findFileItem(copied.getId());
+        assertThat(copiedItem.getFolder().getId()).isEqualTo(targetFolderId);
         assertThat(copiedItem.getStoredObject().getId()).isNotEqualTo(sourceStoredObjectId);
+        assertThat(copiedItem.getChecksum()).isEqualTo(sourceItem.getChecksum());
         assertThat(copiedItem.getStoredObject().getChecksum()).isEqualTo(sourceItem.getStoredObject().getChecksum());
         assertThat(Files.readAllBytes(storedObjectPath(copiedItem.getStoredObject()))).isEqualTo("copy-content".getBytes());
         assertThat(storageFileCount()).isEqualTo(storageFilesBeforeCopy + 1);
@@ -196,6 +223,25 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void copyIntoSameFolderWithNewNameIsRejectedAsChecksumDuplicate() throws Exception {
+        createUser("copy-checksum@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("copy-checksum@test.local", PASSWORD);
+        FileItemDto source = upload(token, "source.txt", "text/plain", "copy-content".getBytes());
+
+        // user + folder + checksum уже есть в исходной папке → 409, дубль не создаётся даже с новым именем.
+        perform(post("/api/v1/files/{id}/copy", source.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"originalName":"source-copy.txt"}
+                                """))
+                .andExpect(status().isConflict());
+
+        assertThat(fileItemRepository.findAll()).hasSize(1);
+        assertThat(storedObjectRepository.findAll()).hasSize(1);
     }
 
     @Test
@@ -508,7 +554,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     void checksumExistsRequiresAuthentication() throws Exception {
         perform(post("/api/v1/files/checksums/exists")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(checksumExistsBody(List.of("a".repeat(64)))))
+                        .content(checksumExistsBody(1L, List.of("a".repeat(64)))))
                 .andExpect(status().isUnauthorized());
     }
 
@@ -517,36 +563,65 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         createUser("checksum-validation@test.local", PASSWORD);
         String token = loginAndGetAccessToken("checksum-validation@test.local", PASSWORD);
 
+        // Отсутствует folderId → 400.
         perform(post("/api/v1/files/checksums/exists")
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"checksums":null}
+                                {"checksums":["%s"]}
+                                """.formatted("a".repeat(64))))
+                .andExpect(status().isBadRequest());
+        perform(post("/api/v1/files/checksums/exists")
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"folderId":1,"checksums":null}
                                 """))
                 .andExpect(status().isBadRequest());
         perform(post("/api/v1/files/checksums/exists")
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"checksums":[]}
+                                {"folderId":1,"checksums":[]}
                                 """))
                 .andExpect(status().isBadRequest());
         perform(post("/api/v1/files/checksums/exists")
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(checksumExistsBody(List.of("a".repeat(63)))))
+                        .content(checksumExistsBody(1L, List.of("a".repeat(63)))))
                 .andExpect(status().isBadRequest());
         perform(post("/api/v1/files/checksums/exists")
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(checksumExistsBody(List.of("g".repeat(64)))))
+                        .content(checksumExistsBody(1L, List.of("g".repeat(64)))))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void checksumExistsRejectsForeignOrMissingFolder() throws Exception {
+        createUser("checksum-folder-owner@test.local", PASSWORD);
+        createUser("checksum-folder-other@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("checksum-folder-owner@test.local", PASSWORD);
+        String otherToken = loginAndGetAccessToken("checksum-folder-other@test.local", PASSWORD);
+        Long foreignRootId = getRootId(otherToken);
+
+        perform(post("/api/v1/files/checksums/exists")
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(checksumExistsBody(foreignRootId, List.of("a".repeat(64)))))
+                .andExpect(status().isNotFound());
+        perform(post("/api/v1/files/checksums/exists")
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(checksumExistsBody(999999L, List.of("a".repeat(64)))))
+                .andExpect(status().isNotFound());
     }
 
     @Test
     void checksumExistsRejectsBatchOverLimit() throws Exception {
         createUser("checksum-batch@test.local", PASSWORD);
         String token = loginAndGetAccessToken("checksum-batch@test.local", PASSWORD);
+        Long rootId = getRootId(token);
         List<String> checksums = new ArrayList<>();
         for (int i = 0; i < 501; i++) {
             checksums.add("%064x".formatted(i));
@@ -555,7 +630,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         perform(post("/api/v1/files/checksums/exists")
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(checksumExistsBody(checksums)))
+                        .content(checksumExistsBody(rootId, checksums)))
                 .andExpect(status().isBadRequest());
     }
 
@@ -569,12 +644,12 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         FileItemDto other = upload(otherToken, "other.txt", "text/plain", "other".getBytes());
         String missing = "f".repeat(64);
 
-        JsonNode response = checksumExists(token, List.of(current.getChecksum(), other.getChecksum(), missing));
+        JsonNode response = checksumExists(token, current.getFolderId(),
+                List.of(current.getChecksum(), other.getChecksum(), missing));
 
         assertThat(texts(response.get("existing"))).containsExactly(current.getChecksum());
         assertThat(texts(response.get("missing"))).containsExactly(other.getChecksum(), missing);
         assertThat(response.toString()).doesNotContain("fileId");
-        assertThat(response.toString()).doesNotContain("folderId");
         assertThat(response.toString()).doesNotContain("originalName");
         assertThat(response.toString()).doesNotContain("storedObject");
     }
@@ -585,39 +660,50 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         String token = loginAndGetAccessToken("checksum-cases@test.local", PASSWORD);
         FileItemDto first = upload(token, "first.txt", "text/plain", "first".getBytes());
         FileItemDto second = upload(token, "second.txt", "text/plain", "second".getBytes());
+        Long folderId = first.getFolderId();
 
-        JsonNode allMissing = checksumExists(token, List.of("a".repeat(64), "b".repeat(64)));
+        JsonNode allMissing = checksumExists(token, folderId, List.of("a".repeat(64), "b".repeat(64)));
         assertThat(allMissing.get("existing")).isEmpty();
         assertThat(texts(allMissing.get("missing"))).containsExactly("a".repeat(64), "b".repeat(64));
 
-        JsonNode allExisting = checksumExists(token, List.of(first.getChecksum(), second.getChecksum()));
+        JsonNode allExisting = checksumExists(token, folderId, List.of(first.getChecksum(), second.getChecksum()));
         assertThat(texts(allExisting.get("existing"))).containsExactly(first.getChecksum(), second.getChecksum());
         assertThat(allExisting.get("missing")).isEmpty();
 
-        JsonNode normalized = checksumExists(token, List.of(first.getChecksum().toUpperCase(), first.getChecksum(), second.getChecksum()));
+        JsonNode normalized = checksumExists(token, folderId, List.of(first.getChecksum().toUpperCase(), first.getChecksum(), second.getChecksum()));
         assertThat(texts(normalized.get("existing"))).containsExactly(first.getChecksum(), second.getChecksum());
         assertThat(normalized.get("missing")).isEmpty();
     }
 
     @Test
-    void checksumExistsReturnsChecksumOnceWhenSeveralStoredObjectsHaveSameChecksum() throws Exception {
-        createUser("checksum-copy@test.local", PASSWORD);
-        String token = loginAndGetAccessToken("checksum-copy@test.local", PASSWORD);
-        FileItemDto source = upload(token, "source.txt", "text/plain", "same-physical-content".getBytes());
+    void checksumExistsIsScopedToFolderAndUser() throws Exception {
+        createUser("scope-user@test.local", PASSWORD);
+        createUser("scope-other@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("scope-user@test.local", PASSWORD);
+        String otherToken = loginAndGetAccessToken("scope-other@test.local", PASSWORD);
 
-        perform(post("/api/v1/files/{id}/copy", source.getId())
-                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"originalName":"source-copy.txt"}
-                                """))
-                .andExpect(status().isOk());
+        FileItemDto uploaded = upload(token, "scoped.txt", "text/plain", "scoped-content".getBytes());
+        Long folderWithFile = uploaded.getFolderId();
+        String checksum = uploaded.getChecksum();
 
-        assertThat(storedObjectRepository.findAll()).hasSize(2);
-        JsonNode response = checksumExists(token, List.of(source.getChecksum(), source.getChecksum().toUpperCase()));
+        Long rootId = getRootId(token);
+        Long emptyFolderId = createFolder(token, rootId, "Empty").get("id").asLong();
+        Long otherUserRootId = getRootId(otherToken);
 
-        assertThat(texts(response.get("existing"))).containsExactly(source.getChecksum());
-        assertThat(response.get("missing")).isEmpty();
+        // Та же папка пользователя → existing.
+        JsonNode inFolder = checksumExists(token, folderWithFile, List.of(checksum));
+        assertThat(texts(inFolder.get("existing"))).containsExactly(checksum);
+        assertThat(inFolder.get("missing")).isEmpty();
+
+        // Другая папка того же пользователя → missing: тот же checksum в другой папке дублем не считается.
+        JsonNode inOtherFolder = checksumExists(token, emptyFolderId, List.of(checksum));
+        assertThat(inOtherFolder.get("existing")).isEmpty();
+        assertThat(texts(inOtherFolder.get("missing"))).containsExactly(checksum);
+
+        // Другой пользователь не видит чужой checksum в своей папке.
+        JsonNode otherUser = checksumExists(otherToken, otherUserRootId, List.of(checksum));
+        assertThat(otherUser.get("existing")).isEmpty();
+        assertThat(texts(otherUser.get("missing"))).containsExactly(checksum);
     }
 
     @Test
@@ -678,6 +764,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
                 .user(other)
                 .folder(otherSeedItem.getFolder())
                 .storedObject(ownerItem.getStoredObject())
+                .checksum(ownerItem.getStoredObject().getChecksum())
                 .originalName("other-logical.jpg")
                 .capturedAt(LocalDateTime.now())
                 .uploadedAt(LocalDateTime.now())
@@ -839,18 +926,21 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
-    private JsonNode checksumExists(String token, List<String> checksums) throws Exception {
+    private JsonNode checksumExists(String token, Long folderId, List<String> checksums) throws Exception {
         MvcResult result = perform(post("/api/v1/files/checksums/exists")
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(checksumExistsBody(checksums)))
+                        .content(checksumExistsBody(folderId, checksums)))
                 .andExpect(status().isOk())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
-    private String checksumExistsBody(List<String> checksums) throws Exception {
-        return objectMapper.writeValueAsString(java.util.Map.of("checksums", checksums));
+    private String checksumExistsBody(Long folderId, List<String> checksums) throws Exception {
+        java.util.Map<String, Object> body = new java.util.HashMap<>();
+        body.put("folderId", folderId);
+        body.put("checksums", checksums);
+        return objectMapper.writeValueAsString(body);
     }
 
     private List<String> texts(JsonNode arrayNode) {

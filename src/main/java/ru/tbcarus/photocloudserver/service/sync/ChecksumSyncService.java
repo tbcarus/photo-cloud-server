@@ -2,10 +2,12 @@ package ru.tbcarus.photocloudserver.service.sync;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import ru.tbcarus.photocloudserver.model.Folder;
 import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.model.dto.ChecksumExistsRequest;
 import ru.tbcarus.photocloudserver.model.dto.ChecksumExistsResponse;
-import ru.tbcarus.photocloudserver.repository.StoredObjectRepository;
+import ru.tbcarus.photocloudserver.repository.FileItemRepository;
+import ru.tbcarus.photocloudserver.service.FolderService;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -17,7 +19,8 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class ChecksumSyncService {
 
-    private final StoredObjectRepository storedObjectRepository;
+    private final FileItemRepository fileItemRepository;
+    private final FolderService folderService;
     private final ChecksumExistsProperties checksumExistsProperties;
 
     public ChecksumExistsResponse checkExisting(User user, ChecksumExistsRequest request) {
@@ -25,13 +28,19 @@ public class ChecksumSyncService {
             throw new IllegalArgumentException("Checksum batch size must be at most " + checksumExistsProperties.getMaxBatchSize());
         }
 
+        // Проверяем владение папкой: чужая/несуществующая папка отдаёт 404, как и остальной files API.
+        Folder folder = folderService.getFolderForUser(request.folderId(), user);
+
         // Дубликаты не нужно отправлять в БД повторно, но порядок ответа должен оставаться предсказуемым.
         LinkedHashSet<String> requestedChecksums = new LinkedHashSet<>();
         for (String checksum : request.checksums()) {
             requestedChecksums.add(checksum.toLowerCase(Locale.ROOT));
         }
 
-        Set<String> existingChecksums = storedObjectRepository.findExistingChecksums(user.getId(), requestedChecksums);
+        // existing = в этой папке пользователя уже есть FileItem с таким checksum.
+        // Тот же checksum в другой папке или у другого пользователя на результат не влияет.
+        Set<String> existingChecksums = fileItemRepository.findExistingChecksumsInFolder(
+                user.getId(), folder.getId(), requestedChecksums);
         List<String> existing = new ArrayList<>();
         List<String> missing = new ArrayList<>();
         for (String checksum : requestedChecksums) {
@@ -42,9 +51,7 @@ public class ChecksumSyncService {
             }
         }
 
-        // TODO: Добавить отдельный link-existing endpoint для создания FileItem без повторной загрузки байтов.
-        // TODO: Device/deviceId и full sync sessions понадобятся для first sync и восстановления после переустановки.
-        // TODO: Расширенный response с fileType/size/capturedAt лучше вынести в отдельный endpoint, оставив этот минимальным.
+        // TODO: server-side copy без передачи байтов для ручной загрузки в другую папку — отдельный будущий endpoint/этап.
         return new ChecksumExistsResponse(existing, missing);
     }
 }

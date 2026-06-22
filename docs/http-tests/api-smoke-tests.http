@@ -130,7 +130,7 @@ Content-Type: application/json
 }
 
 ### РЕАЛИЗОВАНО - FileController: загрузка одного media-файла
-#Ожидается 200 OK. При повторной загрузке того же содержимого для того же user вернётся DTO уже существующего файла.
+#Ожидается 200 OK. При повторной загрузке того же содержимого в ту же папку (user + folder + checksum) вернётся DTO уже существующего файла.
 POST {{baseUrl}}/api/v1/files
 Authorization: Bearer {{accessToken}}
 Content-Type: multipart/form-data; boundary=SmokeBoundary
@@ -171,3 +171,17 @@ Authorization: Bearer {{accessToken}}
 #Ожидается: originalFilename = имя файла, checksum = SHA-256 файла.
 GET {{baseUrl}}/api/v1/files/checksums
 Authorization: Bearer {{accessToken}}
+
+### РЕАЛИЗОВАНО - FileController: batch pre-check существующих checksum в папке
+#Критерий: user + folder + checksum. existing = есть FileItem с таким checksum в этой папке, missing = нет.
+#folderId обязателен; чужая/несуществующая папка → 404.
+POST {{baseUrl}}/api/v1/files/checksums/exists
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "folderId": {{fileItemId}},
+  "checksums": [
+    "{{checksum}}"
+  ]
+}
