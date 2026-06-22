@@ -81,10 +81,10 @@ Upload pipeline:
 6. MIME преобразуется в `FileType`.
 7. Извлекаются metadata.
 8. Определяется target folder: переданный `folderId` или default `CAMERA`/`FILES`.
-9. Проверяется конфликт имени в папке.
-10. Выполняется dedup по `StoredObject(user_id, checksum)`.
-11. Если физический объект уже есть, создается новый `FileItem` на существующий `StoredObject`.
-12. Если физического объекта нет, temp file переносится в final path, создаются `StoredObject` и `FileItem`.
+9. Проверяется дубль по `user + folder + checksum`: ищется `FileItem` с таким checksum в target folder.
+10. Если такой `FileItem` уже есть в target folder, temp file удаляется и идемпотентно возвращается существующий `FileItem` (новый `StoredObject`/`FileItem` не создаются).
+11. Если дубля в target folder нет, проверяется конфликт имени в папке.
+12. temp file переносится в final path, создаются новый `StoredObject` и новый `FileItem` — даже если тот же checksum уже есть в другой папке пользователя.
 13. При ошибках выполняется cleanup временного или уже перенесенного файла.
 
 ## 6. Операции с файлами
@@ -98,14 +98,18 @@ Upload pipeline:
 `upload`:
 
 - создает логическую запись `FileItem`;
-- может переиспользовать существующий `StoredObject` по checksum.
+- дубль определяется как `user + folder + checksum`;
+- повторная загрузка того же файла в ту же папку идемпотентно возвращает существующий `FileItem`;
+- тот же checksum в другой папке дублем не считается: создаются новый `StoredObject` + новый `FileItem`;
+- `StoredObject` больше не переиспользуется между независимыми загрузками в разные папки.
 
 `copy`:
 
 - создает физическую копию файла;
 - создает новый `StoredObject`;
 - создает новый `FileItem`;
-- dedup намеренно не использует.
+- dedup намеренно не использует;
+- если в target folder уже есть `FileItem` с таким checksum, возвращается `409` (copy того же файла в исходную папку конфликтует по checksum).
 
 `move`:
 
@@ -119,18 +123,25 @@ Upload pipeline:
 
 `delete`:
 
+- логика удаления не менялась;
 - если текущий пользователь не владелец `StoredObject`, удаляется только его `FileItem`;
 - если текущий пользователь владелец `StoredObject`, удаляются все `FileItem` на этот объект, затем `StoredObject`, затем physical file;
+- благодаря модели `user + folder + checksum` независимые загрузки в разные папки имеют разные `StoredObject`, поэтому удаление файла в одной папке не удаляет файл из другой папки;
 - сейчас это hard delete, не trash.
 
 ## 7. Checksum sync
 
-`POST /api/v1/files/checksums/exists` нужен Android-клиенту как pre-check перед upload. Клиент отправляет batch SHA-256 checksum, сервер отвечает, какие checksum уже есть в `StoredObject` текущего пользователя.
+`POST /api/v1/files/checksums/exists` нужен Android-клиенту как pre-check перед upload. Request содержит `folderId` и batch SHA-256 checksum. Проверка выполняется по `user + folder + checksum`: сервер отвечает, какие checksum уже есть логической записью `FileItem` в указанной папке.
+
+- `existing` — в этой папке пользователя уже есть `FileItem` с таким checksum;
+- `missing` — в этой папке такого `FileItem` нет;
+- тот же checksum в другой папке пользователя не считается `existing`;
+- тот же checksum у другого пользователя на результат не влияет.
 
 Ограничения:
 
 - это не полноценная синхронизация;
-- `FileItem` и `Folder` не учитываются;
+- проверяется логический `FileItem` в конкретной папке, физический слой `StoredObject` напрямую не опрашивается;
 - response минимален: `existing` и `missing`;
 - link-existing endpoint пока отсутствует;
 - device model и sync sessions пока отсутствуют.
@@ -163,7 +174,8 @@ Upload pipeline:
 - БД является источником логической структуры файлов и папок.
 - Физическое хранилище является object storage и не повторяет дерево папок.
 - `FileItem` отделен от `StoredObject`, поэтому логическая структура может меняться без physical move.
-- Upload использует dedup по checksum в рамках пользователя.
+- Дубль файла определяется как `user + folder + checksum`; в рамках одной папки checksum уникален (unique constraint `user_id + folder_id + checksum`).
+- Upload идемпотентен в пределах папки и не переиспользует `StoredObject` между независимыми загрузками в разные папки.
 - Copy создает независимую физическую копию и новый `StoredObject`.
 - Move и rename не трогают физический файл.
 - `CAMERA` допускает одинаковые имена файлов.
