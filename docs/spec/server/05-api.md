@@ -535,7 +535,7 @@ FileType = IMAGE, VIDEO, AUDIO, DOCUMENT, ARCHIVE, OTHER; FolderType = ROOT, CAM
 
 ## Документация API в repository
 
-Repository API docs и `.http` examples не являются authoritative source текущей Verified As-Is. Основные DTO и happy paths в значительной части совпадают; известные расхождения зафиксированы в Audit A/B:
+Repository API docs и `.http` examples не являются authoritative source текущей спецификации. Основные DTO и happy paths в значительной части совпадают; известные расхождения зафиксированы в Audit A/B:
 
 - Checksum conflict при move способен привести к `500 DATABASE_CONSTRAINT_VIOLATION`, что repository contract отражает не полностью.
 - Manual smoke/examples не покрывают весь текущий API.

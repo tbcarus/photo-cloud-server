@@ -1,23 +1,22 @@
-# Verified Server As-Is Specification — PhotoCloud
+# PhotoCloud Server Specification
 
-- Version: `Server As-Is v1`
-- Status: `FROZEN`
-- Review: `PASS_WITH_MINOR_FIXES → all 11 findings closed`
-- Freeze record: [20-freeze-record.md](20-freeze-record.md)
+Это living specification текущего компонента. Она описывает актуальное подтверждённое техническое поведение PhotoCloud Server — API, данные, хранение, безопасность и ограничения — и обновляется вместе с осознанными изменениями поведения и реализации.
 
-Этот набор описывает фактическое устройство серверной части: API, данные, хранение, безопасность и ограничения. Он предназначен для сопоставления с Android As-Is и построения общей System As-Is Specification.
+При изменении поведения сначала принимается решение на соответствующем верхнем уровне (для системного поведения — в [system/](../../../../system-spec/docs/spec/system/README.md)), затем обновляются component specification и code. Направление: `system/ → server/ + android/ → production code`. Расхождение spec и code требует явного `CHECK`. Существующие OPEN и риски сохраняются до их явного пересмотра.
+
+Git хранит историю предыдущих состояний, включая прежний freeze. Отдельная неизменяемая копия этой спецификации не поддерживается.
 
 Основа — консолидация Audit A и Audit B одной production-версии. Код использован только для вопросов, перечисленных в журнале верификации. Дата консолидации: 2026-09-11. Состояние развёрнутого сервера, доставка SMTP, действующие переменные окружения и результаты запуска тестов не подтверждались. Описание БД относится к результату применения поставляемых миграций 01–14.
 
 Обычный текст означает AS-IS. PARTIAL обозначает частичную функцию, STUB — заглушку, UNUSED — существующий неиспользуемый элемент, OPEN — предел установленного поведения или нерешённый вопрос. В API и матрице дополнительно используются IMPLEMENTED и NOT PRESENT. IMPLEMENTED не означает отсутствие рисков или подтверждённое прохождение тестов.
 
-Начало чтения: [сводка](00-server-as-is-summary.md), затем [API](05-api.md), [модель данных](03-data-model.md) и [хранилище](07-file-storage.md). Стабильные идентификаторы capabilities находятся в [матрице](15-feature-matrix.md). Риски, вопросы и происхождение фактов вынесены отдельно.
+Начало чтения: [сводка](00-server-summary.md), затем [API](05-api.md), [модель данных](03-data-model.md) и [хранилище](07-file-storage.md). Стабильные идентификаторы capabilities находятся в [матрице](15-feature-matrix.md). Риски, вопросы и происхождение фактов вынесены отдельно.
 
 ## Состав
 
 | Файл | Назначение |
 | --- | --- |
-| [00-server-as-is-summary.md](00-server-as-is-summary.md) | Краткая сводка |
+| [00-server-summary.md](00-server-summary.md) | Краткая сводка |
 | [01-system-overview.md](01-system-overview.md) | Границы и источники данных |
 | [02-architecture.md](02-architecture.md) | Слои и зависимости |
 | [03-data-model.md](03-data-model.md) | Сущности, identity, ownership, ER |
@@ -36,7 +35,6 @@
 | [16-risks.md](16-risks.md) | Обоснованные риски |
 | [17-open-questions.md](17-open-questions.md) | Нерешённые вопросы |
 | [18-verification-log.md](18-verification-log.md) | Только обращения к коду |
-| [19-source-traceability.md](19-source-traceability.md) | Сопоставление источников, классификация, self-check |
-| [20-freeze-record.md](20-freeze-record.md) | Server As-Is v1 — статус заморозки и закрытие review |
+| [19-source-traceability.md](19-source-traceability.md) | Сопоставление источников и классификация |
 
 Происхождение аудитов определяется архивом и путём внутри него, а не устаревшими ссылками аудитов на каталоги проекта. Архивы содержат по 19 Markdown-файлов; упоминаемые ими client-handoff-файлы в предоставленных архивах отсутствуют и источниками этой спецификации не являются.

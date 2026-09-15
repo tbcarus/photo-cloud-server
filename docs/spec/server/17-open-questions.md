@@ -44,7 +44,7 @@ Auth UX, sync ownership и связь локального состояния.
 
 ### Current As-Is
 
-Сервер знает FileItem.id/folder/checksum, но не путь и asset ID устройства. Фактическая Android-side identity будет установлена в Android As-Is; текущий OPEN относится к целевой системной модели связи local asset ↔ server identity.
+Сервер знает FileItem.id/folder/checksum, но не путь и asset ID устройства. Фактическая Android-side identity будет установлена в PhotoCloud Android Specification; текущий OPEN относится к целевой системной модели связи local asset ↔ server identity.
 
 ### Question
 
@@ -350,7 +350,7 @@ Account DTO и пользовательские действия.
 
 ### Current As-Is
 
-Два upload aliases работают; фактические Android routes/client behaviour должны быть установлены в Android As-Is; browser UI отсутствует. Поддерживаемые client versions/browser scenarios — отдельное продуктовое решение этого OPEN.
+Два upload aliases работают; фактические Android routes/client behaviour должны быть установлены в PhotoCloud Android Specification; browser UI отсутствует. Поддерживаемые client versions/browser scenarios — отдельное продуктовое решение этого OPEN.
 
 ### Question
 
