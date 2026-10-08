@@ -1,9 +1,13 @@
 package ru.tbcarus.photocloudserver.util;
 
+import org.springframework.beans.factory.annotation.Value;
+
 public class ConfigUtil {
 
-    public static final int DEFAULT_EXPIRED_DAYS = 3;
-    public static final int ACTIVE_REQUESTS_MAX = 3;
+    @Value("${auth.request.valid-days}")
+    public static int DEFAULT_EXPIRED_DAYS;
+    @Value("${auth.request.active-max}")
+    public static int ACTIVE_REQUESTS_MAX;
 
     public static final String SELF_COLOR = "#ffc107";
 

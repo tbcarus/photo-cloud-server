@@ -45,6 +45,11 @@ storage:
   physical-filename:
     original-name-max-length: 80
 
+auth:
+  request:
+    valid-days: 3
+    active-max: 3
+
 sync:
   checksum-exists:
     max-batch-size: 500

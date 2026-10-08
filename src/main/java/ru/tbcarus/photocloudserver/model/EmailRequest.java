@@ -8,6 +8,8 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
+import org.springframework.beans.factory.annotation.Value;
+import ru.tbcarus.photocloudserver.util.ConfigUtil;
 
 import java.time.LocalDateTime;
 
@@ -18,10 +20,6 @@ import java.time.LocalDateTime;
 @Table(name = "email_requests")
 @Builder
 public class EmailRequest {
-    // Вынести в конфиги
-    public static final int DEFAULT_EXPIRED_DAYS = 3;
-    public static final int ACTIVE_REQUESTS_MAX = 3;
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -43,7 +41,7 @@ public class EmailRequest {
     private LocalDateTime createdAt;
 
     public boolean isActive() {
-        return createdAt.plusDays(DEFAULT_EXPIRED_DAYS).isAfter(LocalDateTime.now());
+        return createdAt.plusDays(ConfigUtil.DEFAULT_EXPIRED_DAYS).isAfter(LocalDateTime.now());
     }
 
     public boolean isExpired() {

@@ -41,7 +41,7 @@ public class EmailRequestService {
     public EmailRequest checkAndGenerateCode(User user, EmailRequestType type) {
         int tokensCount = emailRequestRepository.countByUserAndTypeAndCreatedAtAfter(user, type, LocalDateTime.now().minusDays(3));
 
-        if (tokensCount >= 3) {
+        if (tokensCount >= ConfigUtil.ACTIVE_REQUESTS_MAX) {
             throw new BadRegistrationRequest(ErrorType.TOO_MUCH_REPEAT_REQUESTS);
         }
         return generateEmailRequest(user, type);
