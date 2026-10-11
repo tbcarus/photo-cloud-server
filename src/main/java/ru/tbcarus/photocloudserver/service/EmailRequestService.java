@@ -2,6 +2,7 @@ package ru.tbcarus.photocloudserver.service;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import ru.tbcarus.photocloudserver.exception.BadRegistrationRequest;
@@ -11,7 +12,6 @@ import ru.tbcarus.photocloudserver.model.EmailRequestType;
 import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.repository.EmailRequestRepository;
 import ru.tbcarus.photocloudserver.repository.UserRepository;
-import ru.tbcarus.photocloudserver.util.ConfigUtil;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -27,6 +27,11 @@ public class EmailRequestService {
     private final EmailRequestRepository emailRequestRepository;
     private final PasswordEncoder passwordEncoder;
 
+    @Value("${auth.request.valid-days}")
+    private int validDays;
+    @Value("${auth.request.active-max}")
+    private int activeRequestsMax;
+
     public EmailRequest generateEmailRequest(User user, EmailRequestType type) {
         EmailRequest emailRequest = EmailRequest.builder()
                 .code(UUID.randomUUID().toString())
@@ -41,7 +46,7 @@ public class EmailRequestService {
     public EmailRequest checkAndGenerateCode(User user, EmailRequestType type) {
         int tokensCount = emailRequestRepository.countByUserAndTypeAndCreatedAtAfter(user, type, LocalDateTime.now().minusDays(3));
 
-        if (tokensCount >= ConfigUtil.ACTIVE_REQUESTS_MAX) {
+        if (tokensCount >= activeRequestsMax) {
             throw new BadRegistrationRequest(ErrorType.TOO_MUCH_REPEAT_REQUESTS);
         }
         return generateEmailRequest(user, type);
@@ -76,7 +81,7 @@ public class EmailRequestService {
         emailRequest.setUsed(true);
         List<EmailRequest> list = emailRequestRepository.findAllByUserIdAndCreatedAtBetweenAndTypeOrderByCreatedAtDesc(
                 user.getId(),
-                LocalDateTime.now().minusDays(ConfigUtil.DEFAULT_EXPIRED_DAYS),
+                LocalDateTime.now().minusDays(validDays),
                 LocalDateTime.now(),
                 EmailRequestType.PASSWORD_RESET);
         list.forEach(er -> er.setUsed(true));
@@ -92,7 +97,7 @@ public class EmailRequestService {
     }
 
     public void checkEmailRequest(EmailRequest emailRequest, EmailRequestType type) {
-        if (emailRequest.isUsed() || emailRequest.getType() != type || emailRequest.isExpired()) {
+        if (emailRequest.isUsed() || emailRequest.getType() != type || emailRequest.isExpired(validDays)) {
             throw new BadRegistrationRequest(ErrorType.NOT_FOUND);
         }
     }

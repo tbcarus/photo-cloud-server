@@ -8,8 +8,6 @@ import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
-import org.springframework.beans.factory.annotation.Value;
-import ru.tbcarus.photocloudserver.util.ConfigUtil;
 
 import java.time.LocalDateTime;
 
@@ -40,12 +38,12 @@ public class EmailRequest {
     @Column(updatable = false)
     private LocalDateTime createdAt;
 
-    public boolean isActive() {
-        return createdAt.plusDays(ConfigUtil.DEFAULT_EXPIRED_DAYS).isAfter(LocalDateTime.now());
+    public boolean isActive(int validDays) {
+        return createdAt.plusDays(validDays).isAfter(LocalDateTime.now());
     }
 
-    public boolean isExpired() {
-        return !isActive();
+    public boolean isExpired(int validDays) {
+        return !isActive(validDays);
     }
 
 }

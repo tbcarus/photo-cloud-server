@@ -16,6 +16,7 @@ import java.time.LocalDateTime;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -74,6 +75,26 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value("BAD_REGISTRATION_REQUEST"))
                 .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.message").isNotEmpty());
+    }
+
+    @Test
+    void freshRegistrationCodeActivatesUser() throws Exception {
+        User user = createUser("fresh-confirm@test.local", PASSWORD, false, false);
+        String code = "fresh-confirm-code";
+        emailRequestRepository.save(EmailRequest.builder()
+                .code(code)
+                .type(EmailRequestType.ACTIVATE)
+                .used(false)
+                .user(user)
+                .build());
+
+        perform(get("/api/v1/auth/register/confirm").param("code", code))
+                .andExpect(status().isOk())
+                .andExpect(content().string("User fresh-confirm@test.local was verified"));
+
+        assertThat(userRepository.findById(user.getId()).orElseThrow().isEnabled()).isTrue();
+        assertThat(emailRequestRepository.findByCode(code).orElseThrow().isUsed()).isTrue();
+        loginAndGetAccessToken("fresh-confirm@test.local", PASSWORD);
     }
 
     @Test
