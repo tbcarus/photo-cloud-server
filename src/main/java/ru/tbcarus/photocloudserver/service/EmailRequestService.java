@@ -1,5 +1,6 @@
 package ru.tbcarus.photocloudserver.service;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,10 +28,21 @@ public class EmailRequestService {
     private final EmailRequestRepository emailRequestRepository;
     private final PasswordEncoder passwordEncoder;
 
-    @Value("${auth.request.valid-days}")
-    private int validDays;
+    @Value("${auth.request.activation-valid-days}")
+    private int activationValidDays;
+    @Value("${auth.request.reset-valid-days}")
+    private int resetValidDays;
     @Value("${auth.request.active-max}")
     private int activeRequestsMax;
+
+    @PostConstruct
+    void validateValidDays() {
+        if (activationValidDays < 1 || resetValidDays < 1) {
+            throw new IllegalStateException(String.format(
+                    "auth.request.activation-valid-days=%d and auth.request.reset-valid-days=%d must be at least 1",
+                    activationValidDays, resetValidDays));
+        }
+    }
 
     public EmailRequest generateEmailRequest(User user, EmailRequestType type) {
         EmailRequest emailRequest = EmailRequest.builder()
@@ -81,7 +93,7 @@ public class EmailRequestService {
         emailRequest.setUsed(true);
         List<EmailRequest> list = emailRequestRepository.findAllByUserIdAndCreatedAtBetweenAndTypeOrderByCreatedAtDesc(
                 user.getId(),
-                LocalDateTime.now().minusDays(validDays),
+                LocalDateTime.now().minusDays(resetValidDays),
                 LocalDateTime.now(),
                 EmailRequestType.PASSWORD_RESET);
         list.forEach(er -> er.setUsed(true));
@@ -97,8 +109,15 @@ public class EmailRequestService {
     }
 
     public void checkEmailRequest(EmailRequest emailRequest, EmailRequestType type) {
-        if (emailRequest.isUsed() || emailRequest.getType() != type || emailRequest.isExpired(validDays)) {
+        if (emailRequest.isUsed() || emailRequest.getType() != type || emailRequest.isExpired(validDays(type))) {
             throw new BadRegistrationRequest(ErrorType.NOT_FOUND);
         }
+    }
+
+    private int validDays(EmailRequestType type) {
+        return switch (type) {
+            case ACTIVATE -> activationValidDays;
+            case PASSWORD_RESET -> resetValidDays;
+        };
     }
 }

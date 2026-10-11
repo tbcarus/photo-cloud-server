@@ -47,7 +47,8 @@ storage:
 
 auth:
   request:
-    valid-days: 3
+    activation-valid-days: 3
+    reset-valid-days: 3
     active-max: 3
 
 sync:
