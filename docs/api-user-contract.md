@@ -69,8 +69,10 @@ Validation:
 
 | Field | Правила |
 | --- | --- |
-| `email` | not blank, valid email |
+| `email` | not blank, valid email, length ≤ 128 |
 | `password` | not blank, length 4..20 |
+
+Нарушение правил → `400 VALIDATION_ERROR` с сообщением по полю в `fieldErrors`. Email длиннее 128 символов: `"email": "Email length must be up to 128"`.
 
 Response `201 Created`:
 

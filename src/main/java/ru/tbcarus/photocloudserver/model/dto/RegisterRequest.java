@@ -8,6 +8,8 @@ import jakarta.validation.constraints.Size;
 public record RegisterRequest(
         @NotBlank(message = "Email must not be blank")
         @Email(message = "Email must be valid")
+        // Предел совпадает с размером users.email VARCHAR(128) в БД.
+        @Size(max = 128, message = "Email length must be up to 128")
         String email,
         @NotBlank(message = "Password must not be blank")
         @Size(min = 4, max = 20, message = "Password length must be from 4 to 20")

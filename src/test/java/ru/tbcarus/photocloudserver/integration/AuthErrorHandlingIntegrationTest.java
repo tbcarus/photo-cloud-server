@@ -265,6 +265,39 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void registerValidationAcceptsEmailOf128Characters() throws Exception {
+        // Невалидный пароль останавливает запрос на валидации; отсутствие ошибки email подтверждает допустимость 128 символов.
+        perform(post("/api/v1/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"%s\",\"password\":\"123\"}".formatted(emailOfLength(128))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.fieldErrors.password").value("Password length must be from 4 to 20"))
+                .andExpect(jsonPath("$.fieldErrors.email").doesNotExist());
+    }
+
+    @Test
+    void registerValidationRejectsEmailLongerThan128Characters() throws Exception {
+        perform(post("/api/v1/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"%s\",\"password\":\"pass1\"}".formatted(emailOfLength(129))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("Validation failed"))
+                .andExpect(jsonPath("$.fieldErrors.email").value("Email length must be up to 128"))
+                .andExpect(jsonPath("$.fieldErrors.password").doesNotExist());
+
+        assertThat(userRepository.count()).isZero();
+        assertThat(emailRequestRepository.count()).isZero();
+    }
+
+    @Test
+    void registerValidationRejectsInvalidEmailFormat() throws Exception {
+        assertValidationBody("/api/v1/auth/register", "{\"email\":\"not-an-email\",\"password\":\"pass1\"}", "email", "Email must be valid");
+    }
+
+    @Test
     void duplicateRegisterReturnsConflictErrorResponse() throws Exception {
         createUser("duplicate@test.local", PASSWORD);
 
@@ -475,6 +508,13 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
         assertThat(response.get("code").asText()).isEqualTo("VALIDATION_ERROR");
         assertThat(response.get("message").asText()).isEqualTo("Validation failed");
         assertThat(response.get("fieldErrors").has(field)).isTrue();
+    }
+
+    // Синтаксически корректный email: @Email ограничивает local-part 64 символами, а метку домена — 63.
+    private String emailOfLength(int length) {
+        String localPart = "a".repeat(64);
+        String domainSuffix = ".local";
+        return localPart + "@" + "b".repeat(length - localPart.length() - 1 - domainSuffix.length()) + domainSuffix;
     }
 
     private LoginResponse login(String email, String password) throws Exception {
