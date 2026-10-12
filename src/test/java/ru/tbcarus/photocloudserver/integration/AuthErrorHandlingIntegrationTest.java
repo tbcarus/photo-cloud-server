@@ -98,6 +98,44 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void registrationCodeCannotBeUsedTwice() throws Exception {
+        User user = createUser("twice-confirm@test.local", PASSWORD, false, false);
+        String code = saveEmailRequest(user, "twice-confirm-code", EmailRequestType.ACTIVATE);
+
+        perform(get("/api/v1/auth/register/confirm").param("code", code))
+                .andExpect(status().isOk());
+        perform(get("/api/v1/auth/register/confirm").param("code", code))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("BAD_REGISTRATION_REQUEST"));
+
+        assertThat(userRepository.findById(user.getId()).orElseThrow().isEnabled()).isTrue();
+        assertThat(emailRequestRepository.findByCode(code).orElseThrow().isUsed()).isTrue();
+    }
+
+    @Test
+    void passwordResetCodeCannotActivateUser() throws Exception {
+        User user = createUser("reset-type-confirm@test.local", PASSWORD, false, false);
+        String code = saveEmailRequest(user, "reset-type-confirm-code", EmailRequestType.PASSWORD_RESET);
+
+        perform(get("/api/v1/auth/register/confirm").param("code", code))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("BAD_REGISTRATION_REQUEST"));
+
+        assertThat(userRepository.findById(user.getId()).orElseThrow().isEnabled()).isFalse();
+        assertThat(emailRequestRepository.findByCode(code).orElseThrow().isUsed()).isFalse();
+    }
+
+    @Test
+    void activationDoesNotConsumeCodeWhenUserUpdateFails() throws Exception {
+        assertActivationRolledBack("users", "enabled = false");
+    }
+
+    @Test
+    void activationDoesNotEnableUserWhenCodeUpdateFails() throws Exception {
+        assertActivationRolledBack("email_requests", "used = false");
+    }
+
+    @Test
     void invalidPasswordResetCodeReturnsBadRequestErrorResponse() throws Exception {
         perform(post("/api/v1/auth/password/reset/confirm")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -508,6 +546,34 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
         assertThat(response.get("code").asText()).isEqualTo("VALIDATION_ERROR");
         assertThat(response.get("message").asText()).isEqualTo("Validation failed");
         assertThat(response.get("fieldErrors").has(field)).isTrue();
+    }
+
+    private String saveEmailRequest(User user, String code, EmailRequestType type) {
+        emailRequestRepository.save(EmailRequest.builder()
+                .code(code)
+                .type(type)
+                .used(false)
+                .user(user)
+                .build());
+        return code;
+    }
+
+    // Временный CHECK ... NOT VALID не проверяет существующие строки, но отклоняет UPDATE одной из таблиц при commit активации.
+    private void assertActivationRolledBack(String table, String check) throws Exception {
+        User user = createUser("rollback-confirm@test.local", PASSWORD, false, false);
+        String code = saveEmailRequest(user, "rollback-confirm-code", EmailRequestType.ACTIVATE);
+
+        jdbcTemplate.execute("ALTER TABLE " + table + " ADD CONSTRAINT activation_rollback_check CHECK (" + check + ") NOT VALID");
+        try {
+            perform(get("/api/v1/auth/register/confirm").param("code", code))
+                    .andExpect(status().isInternalServerError())
+                    .andExpect(jsonPath("$.code").value("DATABASE_CONSTRAINT_VIOLATION"));
+        } finally {
+            jdbcTemplate.execute("ALTER TABLE " + table + " DROP CONSTRAINT activation_rollback_check");
+        }
+
+        assertThat(userRepository.findById(user.getId()).orElseThrow().isEnabled()).isFalse();
+        assertThat(emailRequestRepository.findByCode(code).orElseThrow().isUsed()).isFalse();
     }
 
     // Синтаксически корректный email: @Email ограничивает local-part 64 символами, а метку домена — 63.
