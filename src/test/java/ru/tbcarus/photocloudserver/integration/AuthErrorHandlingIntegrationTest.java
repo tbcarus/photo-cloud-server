@@ -1,9 +1,15 @@
 package ru.tbcarus.photocloudserver.integration;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.mail.MessagingException;
+import jakarta.mail.Session;
+import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mail.MailSendException;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MvcResult;
 import ru.tbcarus.photocloudserver.model.EmailRequest;
 import ru.tbcarus.photocloudserver.model.EmailRequestType;
@@ -12,8 +18,17 @@ import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.model.dto.LoginResponse;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -23,6 +38,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
 
     private static final String PASSWORD = "pass1";
+
+    // Письма reset/request уходят в mock; реальный SMTP в тестах не используется.
+    @MockitoBean
+    private JavaMailSender mailSender;
 
     @Test
     void invalidRegistrationCodeReturnsBadRequestErrorResponse() throws Exception {
@@ -155,6 +174,40 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
                 .andExpect(jsonPath("$.message").value("Validation failed"))
                 .andExpect(jsonPath("$.fieldErrors.email").value("Email must not be blank"));
+    }
+
+    @Test
+    void passwordResetRequestSendsEmailAndReturnsOk() throws Exception {
+        createUser("reset-request@test.local", PASSWORD);
+        when(mailSender.createMimeMessage()).thenAnswer(invocation -> new MimeMessage((Session) null));
+
+        perform(post("/api/v1/auth/password/reset/request").param("email", "reset-request@test.local"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Email was sent"));
+
+        assertSingleUnusedResetCode();
+        verify(mailSender, times(1)).send(any(MimeMessage.class));
+    }
+
+    @Test
+    void passwordResetRequestReturns503WhenSmtpFails() throws Exception {
+        createUser("reset-request@test.local", PASSWORD);
+        when(mailSender.createMimeMessage()).thenAnswer(invocation -> new MimeMessage((Session) null));
+        doThrow(new MailSendException("SMTP unavailable")).when(mailSender).send(any(MimeMessage.class));
+
+        assertPasswordResetEmailNotSent("reset-request@test.local", "SMTP unavailable");
+    }
+
+    @Test
+    void passwordResetRequestReturns503WhenMessageCannotBeBuilt() throws Exception {
+        createUser("reset-request@test.local", PASSWORD);
+        // MessagingException без причины: прежний catch падал на getCause() с NPE.
+        MimeMessage message = spy(new MimeMessage((Session) null));
+        doThrow(new MessagingException("Subject rejected")).when(message).setSubject(anyString(), anyString());
+        when(mailSender.createMimeMessage()).thenReturn(message);
+
+        assertPasswordResetEmailNotSent("reset-request@test.local", "Subject rejected");
+        verify(mailSender, never()).send(any(MimeMessage.class));
     }
 
     @Test
@@ -532,6 +585,28 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
         assertThat(response.get("code").asText()).isEqualTo("VALIDATION_ERROR");
         assertThat(response.get("message").asText()).isEqualTo("Validation failed");
         assertThat(response.get("fieldErrors").has(field)).isTrue();
+    }
+
+    // 503 в стандартном ErrorResponse без технических подробностей; PASSWORD_RESET-код, сохранённый до отправки, остаётся.
+    private void assertPasswordResetEmailNotSent(String email, String technicalDetail) throws Exception {
+        String body = perform(post("/api/v1/auth/password/reset/request").param("email", email))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("EMAIL_NOT_SENT"))
+                .andExpect(jsonPath("$.message").value("The password reset email could not be sent. Please try again later."))
+                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
+                .andReturn().getResponse().getContentAsString();
+
+        EmailRequest code = assertSingleUnusedResetCode();
+        assertThat(body).doesNotContain(technicalDetail, code.getCode());
+    }
+
+    private EmailRequest assertSingleUnusedResetCode() {
+        List<EmailRequest> codes = emailRequestRepository.findAll();
+        assertThat(codes).hasSize(1);
+        assertThat(codes.get(0).getType()).isEqualTo(EmailRequestType.PASSWORD_RESET);
+        assertThat(codes.get(0).isUsed()).isFalse();
+        return codes.get(0);
     }
 
     private String saveEmailRequest(User user, String code, EmailRequestType type) {

@@ -1,8 +1,6 @@
 package ru.tbcarus.photocloudserver.service;
 
-import jakarta.mail.MessagingException;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -25,7 +23,6 @@ import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class UserService implements UserDetailsService {
     // Manages users and currently hosts authentication, registration, and password workflows.
 
@@ -61,23 +58,17 @@ public class UserService implements UserDetailsService {
             }
             return emailRequestService.generateEmailRequest(user, EmailRequestType.ACTIVATE);
         });
-        try {
-            emailService.sendEmail(emailRequest);
-        } catch (MessagingException e) {
-            log.error("Nothing was sent {}", e.getCause().getMessage());
-        }
+        // При ошибке отправки EmailSendException даёт 503; User и код уже зафиксированы и учитываются в лимите.
+        emailService.sendEmail(emailRequest);
         return emailRequest.getUser();
     }
 
     public void forgotPassword (String email) {
         User user = userRepository.findByEmailIgnoreCase(email).orElseThrow(() ->
                 new EntityNotFoundException(email, String.format("User %s not found", email)));
+        // Код сохраняется собственной транзакцией save() до отправки и при ошибке письма остаётся в БД.
         EmailRequest emailRequest = emailRequestService.generateEmailRequest(user, EmailRequestType.PASSWORD_RESET);
-        try {
-            emailService.sendEmail(emailRequest);
-        } catch (MessagingException e) {
-            log.error("Nothing was sent {}", e.getCause().getMessage());
-        }
+        emailService.sendEmail(emailRequest);
     }
 
     public void resetPassword (String password, String code) {

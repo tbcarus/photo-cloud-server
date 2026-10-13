@@ -62,6 +62,17 @@ public class GlobalExceptionHandler {
                 .body(error(ErrorCode.CONFLICT, "Account with this email is already activated. Please log in"));
     }
 
+    @ExceptionHandler(EmailSendException.class)
+    public ResponseEntity<ErrorResponse> handleEmailSend(EmailSendException e) {
+        String message = switch (e.getType()) {
+            case ACTIVATE -> "Registration data was saved, but the verification email could not be sent. "
+                    + "Please try again later or contact my-cld@yandex.ru.";
+            case PASSWORD_RESET -> "The password reset email could not be sent. Please try again later.";
+        };
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(error(ErrorCode.EMAIL_NOT_SENT, message));
+    }
+
     @ExceptionHandler(RegistrationLimitExceededException.class)
     public ResponseEntity<ErrorResponse> handleRegistrationLimitExceeded(RegistrationLimitExceededException e) {
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)

@@ -23,6 +23,13 @@ spring:
     username: ${SMTP_USERNAME}
     password: ${SMTP_PASSWORD}
     mail-from: ${SMTP_USERNAME}@yandex.ru
+    properties: # передаются в JavaMailSenderImpl из MailConfig; лимиты отдельных сетевых операций, не всей отправки
+      mail:
+        smtp:
+          connectiontimeout: 5000 # мс, установление соединения
+          timeout: 5000 # мс, каждое чтение ответа сервера
+          writetimeout: 5000 # мс, каждая запись в сокет
+          quitwait: false # не ждать ответа на QUIT после принятого письма
   servlet:
     multipart:
       max-file-size: 110MB

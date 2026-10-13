@@ -6,15 +6,18 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 import org.thymeleaf.context.Context;
+import org.thymeleaf.exceptions.TemplateEngineException;
 import org.thymeleaf.spring6.SpringTemplateEngine;
 import ru.tbcarus.photocloudserver.controller.PasswordController;
 import ru.tbcarus.photocloudserver.controller.RegisterController;
+import ru.tbcarus.photocloudserver.exception.EmailSendException;
 import ru.tbcarus.photocloudserver.model.EmailContext;
 import ru.tbcarus.photocloudserver.model.EmailRequest;
 import ru.tbcarus.photocloudserver.model.EmailRequestType;
@@ -39,21 +42,27 @@ public class EmailService {
     public static final String CONFIRMATION_EMAIL_TEMPLATE = "email/confirmationTemplate";
     public static final String PASSWORD_RESET_EMAIL_TEMPLATE = "email/passwordResetTemplate";
 
-    public void sendEmail(EmailRequest emailRequest) throws MessagingException {
-        MimeMessage message = mailSender.createMimeMessage();
-        MimeMessageHelper helper = new MimeMessageHelper(message, MimeMessageHelper.MULTIPART_MODE_MIXED_RELATED, StandardCharsets.UTF_8.name());
-        Context context = new Context();
-        EmailContext email = getEmailContext(emailRequest);
+    public void sendEmail(EmailRequest emailRequest) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, MimeMessageHelper.MULTIPART_MODE_MIXED_RELATED, StandardCharsets.UTF_8.name());
+            Context context = new Context();
+            EmailContext email = getEmailContext(emailRequest);
 
-        context.setVariables(email.getContext());
-        helper.setFrom(email.getFrom());
-        helper.setTo(email.getTo());
-        helper.setSubject(email.getSubject());
-        String html = templateEngine.process(email.getTemplate(), context);
-        helper.setText(html, true);
+            context.setVariables(email.getContext());
+            helper.setFrom(email.getFrom());
+            helper.setTo(email.getTo());
+            helper.setSubject(email.getSubject());
+            String html = templateEngine.process(email.getTemplate(), context);
+            helper.setText(html, true);
 
-        log.info("Sending email: {} with html body: {}", email, html);
-        mailSender.send(message);
+            log.info("Sending email: {} with html body: {}", email, html);
+            mailSender.send(message);
+        } catch (MessagingException | MailException | TemplateEngineException e) {
+            // Ошибка формирования или отправки: сохранённые данные не откатываются, клиент получает 503.
+            log.error("{} email for user {} was not sent", emailRequest.getType(), emailRequest.getUser().getId(), e);
+            throw new EmailSendException(emailRequest.getType(), e);
+        }
     }
 
     public EmailContext getEmailContext(EmailRequest emailRequest) {

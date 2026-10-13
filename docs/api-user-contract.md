@@ -50,6 +50,9 @@ Access token живет 20 минут. Refresh token живет 7 дней, хр
 | 409 | register: аккаунт с этим email уже активирован |
 | 429 | register: исчерпан лимит регистраций, заголовок `Retry-After` |
 | 501 | зарезервированные endpoint-ы, которые есть в контроллерах, но еще не реализованы |
+| 503 | register, password reset request: письмо не удалось сформировать или SMTP его не принял (`EMAIL_NOT_SENT`); сохраненные данные не откатываются |
+
+Письма отправляются синхронно в рамках HTTP-запроса. SMTP-таймауты (`spring.mail.properties.mail.smtp.*`: подключение 5 с, каждое чтение и каждая запись 5 с) ограничивают отдельные сетевые операции, а не всю отправку; DNS ими не ограничен, поэтому общий максимум времени ответа не гарантируется.
 
 ## Register
 
@@ -113,7 +116,16 @@ Response `429 Too Many Requests` с заголовком `Retry-After: 259140` (
 }
 ```
 
-Ошибка отправки письма после commit: user и код остаются в БД и учитываются в лимите. HTTP-ответ на этот случай пока не стандартизирован (не `ErrorResponse`).
+Response `503 Service Unavailable` — письмо не удалось сформировать или SMTP его не принял (в том числе по таймауту). User и код, сохраненные до отправки, остаются в БД, код учитывается в лимите; повторная регистрация создает новый код:
+
+```json
+{
+  "id": "5c1e7a2d-3f4b-4a8e-9d61-0b2c7e8f9a10",
+  "code": "EMAIL_NOT_SENT",
+  "message": "Registration data was saved, but the verification email could not be sent. Please try again later or contact my-cld@yandex.ru.",
+  "fieldErrors": null
+}
+```
 
 ### `GET /api/v1/auth/register/confirm?code=...`
 
@@ -266,6 +278,17 @@ Response `200 OK`:
 ```
 
 Если пользователь не найден, возвращается `400 BAD_REQUEST`.
+
+Response `503 Service Unavailable` — письмо не удалось сформировать или SMTP его не принял; созданный код остается в БД:
+
+```json
+{
+  "id": "9a4d2c1b-7e6f-4b3a-8c5d-1e2f3a4b5c6d",
+  "code": "EMAIL_NOT_SENT",
+  "message": "The password reset email could not be sent. Please try again later.",
+  "fieldErrors": null
+}
+```
 
 ### `POST /api/v1/auth/password/reset/confirm`
 

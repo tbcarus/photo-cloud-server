@@ -1,5 +1,6 @@
 package ru.tbcarus.photocloudserver.integration;
 
+import jakarta.mail.MessagingException;
 import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeEach;
@@ -9,12 +10,17 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mail.MailAuthenticationException;
 import org.springframework.mail.MailSendException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.thymeleaf.context.IContext;
+import org.thymeleaf.exceptions.TemplateProcessingException;
+import org.thymeleaf.spring6.SpringTemplateEngine;
 import ru.tbcarus.photocloudserver.exception.RegistrationLimitExceededException;
 import ru.tbcarus.photocloudserver.model.EmailRequest;
 import ru.tbcarus.photocloudserver.model.EmailRequestType;
@@ -34,9 +40,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -53,6 +61,9 @@ class RegistrationIntegrationTest extends AbstractIntegrationTest {
 
     @MockitoBean
     private JavaMailSender mailSender;
+
+    @MockitoSpyBean
+    private SpringTemplateEngine templateEngine;
 
     @Autowired
     private EmailRequestService emailRequestService;
@@ -138,9 +149,11 @@ class RegistrationIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void fourthRegistrationWithinWindowIsRejectedAndChangesNothing() throws Exception {
-        // До этапа 05 сбой SMTP не нормализован: исключение выходит из контроллера, но User и код уже зафиксированы.
+        // Первое письмо не отправлено (503), но User и код уже зафиксированы.
         doThrow(new MailSendException("SMTP unavailable")).doNothing().when(mailSender).send(any(MimeMessage.class));
-        assertThatThrownBy(() -> register(EMAIL, "pass1")).hasRootCauseInstanceOf(MailSendException.class);
+        register(EMAIL, "pass1")
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("EMAIL_NOT_SENT"));
         assertThat(codes()).hasSize(1);
 
         register(EMAIL, "pass2").andExpect(status().isCreated());
@@ -163,6 +176,39 @@ class RegistrationIntegrationTest extends AbstractIntegrationTest {
         assertThat(codeStates()).isEqualTo(codesBefore);
         assertThat(codes()).extracting(EmailRequest::isUsed).containsExactly(true, true, false);
         verify(mailSender, times(3)).send(any(MimeMessage.class));
+    }
+
+    @Test
+    void registrationReturns503WhenSmtpRejectsMessage() throws Exception {
+        doThrow(new MailSendException("SMTP unavailable")).when(mailSender).send(any(MimeMessage.class));
+
+        assertRegistrationEmailNotSent("SMTP unavailable");
+    }
+
+    @Test
+    void registrationReturns503WhenSmtpAuthenticationFails() throws Exception {
+        doThrow(new MailAuthenticationException("535 authentication failed")).when(mailSender).send(any(MimeMessage.class));
+
+        assertRegistrationEmailNotSent("535 authentication failed");
+    }
+
+    @Test
+    void registrationReturns503WhenMessageCannotBeBuilt() throws Exception {
+        // MessagingException без причины: прежний catch падал на getCause() с NPE.
+        MimeMessage message = spy(new MimeMessage((Session) null));
+        doThrow(new MessagingException("Subject rejected")).when(message).setSubject(anyString(), anyString());
+        when(mailSender.createMimeMessage()).thenReturn(message);
+
+        assertRegistrationEmailNotSent("Subject rejected");
+        verify(mailSender, never()).send(any(MimeMessage.class));
+    }
+
+    @Test
+    void registrationReturns503WhenTemplateFails() throws Exception {
+        doThrow(new TemplateProcessingException("Template broken")).when(templateEngine).process(anyString(), any(IContext.class));
+
+        assertRegistrationEmailNotSent("Template broken");
+        verify(mailSender, never()).send(any(MimeMessage.class));
     }
 
     @Test
@@ -224,6 +270,24 @@ class RegistrationIntegrationTest extends AbstractIntegrationTest {
         assertThat(user().getPassword()).isEqualTo(passwordBefore);
         assertThat(codeStates()).isEqualTo(codesBefore);
         verify(mailSender, times(1)).send(any(MimeMessage.class));
+    }
+
+    // 503 в стандартном ErrorResponse без технических подробностей; User и ACTIVATE-код остаются в БД.
+    private void assertRegistrationEmailNotSent(String technicalDetail) throws Exception {
+        String body = register(EMAIL, "pass1")
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.id").isNotEmpty())
+                .andExpect(jsonPath("$.code").value("EMAIL_NOT_SENT"))
+                .andExpect(jsonPath("$.message").value("Registration data was saved, but the verification email "
+                        + "could not be sent. Please try again later or contact my-cld@yandex.ru."))
+                .andExpect(jsonPath("$.fieldErrors").value(nullValue()))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(user().isEnabled()).isFalse();
+        List<EmailRequest> codes = codes();
+        assertThat(codes).hasSize(1);
+        assertThat(codes.get(0).isUsed()).isFalse();
+        assertThat(body).doesNotContain(technicalDetail, codes.get(0).getCode(), "pass1");
     }
 
     // Временный CHECK ... NOT VALID не проверяет существующие строки, но отклоняет запись регистрации в выбранной таблице.

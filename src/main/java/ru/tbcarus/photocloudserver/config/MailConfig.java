@@ -24,6 +24,15 @@ public class MailConfig {
     private String host;
     @Value("${spring.mail.port}")
     private Integer port;
+    // Собственный JavaMailSender отключает автоконфигурацию Spring Boot, поэтому SMTP-свойства из YAML передаются явно.
+    @Value("${spring.mail.properties.mail.smtp.connectiontimeout}")
+    private int connectionTimeout;
+    @Value("${spring.mail.properties.mail.smtp.timeout}")
+    private int readTimeout;
+    @Value("${spring.mail.properties.mail.smtp.writetimeout}")
+    private int writeTimeout;
+    @Value("${spring.mail.properties.mail.smtp.quitwait}")
+    private boolean quitWait;
 
     @Bean
     public SpringTemplateEngine springTemplateEngine() {
@@ -56,6 +65,11 @@ public class MailConfig {
         props.put("mail.smtp.starttls.enable", "true");
         props.put("mail.debug", "true");
         props.put("mail.smtp.ssl.enable", "true");
+        // Таймауты ограничивают отдельные сетевые операции (connect, каждое чтение, каждую запись), а не всю отправку и не DNS.
+        props.put("mail.smtp.connectiontimeout", String.valueOf(connectionTimeout));
+        props.put("mail.smtp.timeout", String.valueOf(readTimeout));
+        props.put("mail.smtp.writetimeout", String.valueOf(writeTimeout));
+        props.put("mail.smtp.quitwait", String.valueOf(quitWait));
 
         return mailSender;
     }
