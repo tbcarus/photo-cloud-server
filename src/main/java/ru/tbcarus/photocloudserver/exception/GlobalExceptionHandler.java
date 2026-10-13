@@ -2,6 +2,7 @@ package ru.tbcarus.photocloudserver.exception;
 
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -58,7 +59,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DuplicateEmailException.class)
     public ResponseEntity<ErrorResponse> handleDuplicateEmail(DuplicateEmailException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(error(ErrorCode.CONFLICT, "Email is already registered"));
+                .body(error(ErrorCode.CONFLICT, "Account with this email is already activated. Please log in"));
+    }
+
+    @ExceptionHandler(RegistrationLimitExceededException.class)
+    public ResponseEntity<ErrorResponse> handleRegistrationLimitExceeded(RegistrationLimitExceededException e) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, String.valueOf(e.getRetryAfterSeconds()))
+                .body(error(ErrorCode.TOO_MANY_REQUESTS, e.getMessage()));
     }
 
     @ExceptionHandler(InvalidRefreshTokenException.class)

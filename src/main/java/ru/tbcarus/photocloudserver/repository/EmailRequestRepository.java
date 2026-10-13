@@ -24,5 +24,9 @@ public interface EmailRequestRepository extends JpaRepository<EmailRequest, Inte
                                                                                      LocalDateTime before,
                                                                                      EmailRequestType type);
 
-    int countByUserAndTypeAndCreatedAtAfter(User user, EmailRequestType type, LocalDateTime after);
+    List<EmailRequest> findAllByUserAndTypeAndCreatedAtAfterOrderByCreatedAtAsc(User user,
+                                                                               EmailRequestType type,
+                                                                               LocalDateTime after);
+
+    List<EmailRequest> findAllByUserAndTypeAndUsedFalse(User user, EmailRequestType type);
 }

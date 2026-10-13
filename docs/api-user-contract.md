@@ -47,14 +47,23 @@ Access token живет 20 минут. Refresh token живет 7 дней, хр
 | 401 | неверный login/password, disabled/banned user, invalid refresh token, нет или невалидный access token |
 | 403 | refresh token отозван или принадлежит другому пользователю |
 | 404 | refresh token не найден в logout/logout-others |
-| 409 | email уже зарегистрирован |
+| 409 | register: аккаунт с этим email уже активирован |
+| 429 | register: исчерпан лимит регистраций, заголовок `Retry-After` |
 | 501 | зарезервированные endpoint-ы, которые есть в контроллерах, но еще не реализованы |
 
 ## Register
 
 ### `POST /api/v1/auth/register`
 
-Публичный endpoint. Создает disabled user, приводит email к lowercase, назначает роль `USER`, сохраняет password hash и создает email-code типа `ACTIVATE`.
+Публичный endpoint. Приводит email к lowercase.
+
+- Новый email: создает disabled user с ролью `USER` и password hash, создает email-code типа `ACTIVATE`.
+- Email неактивированного user (повторная регистрация): заменяет password hash, помечает все прежние неиспользованные `ACTIVATE`-коды использованными (старые ссылки отклоняются), создает новый код. Новый user не создается.
+- Email активированного user: `409`, данные не меняются, письмо не отправляется.
+
+Изменения БД выполняются в одной транзакции; письмо со ссылкой отправляется после commit.
+
+Лимит: не больше `auth.request.active-max` (по умолчанию 3) `ACTIVATE`-кодов user, созданных в окне `auth.request.activation-valid-days` (по умолчанию 3 дня). Учитываются все такие коды: код первичной регистрации, использованные, аннулированные и коды, письмо для которых не отправилось. Код учитывается, пока не истек его срок действия. При исчерпании лимита — `429`, данные не меняются, письмо не отправляется.
 
 Request:
 
@@ -82,7 +91,29 @@ Response `201 Created`:
 }
 ```
 
-Email-send ошибка логируется, но не откатывает создание пользователя.
+Response `409 Conflict` (`code: CONFLICT`):
+
+```json
+{
+  "id": "4b0f6a3e-6c4f-4f43-9d7e-2a1f9f0c2b11",
+  "code": "CONFLICT",
+  "message": "Account with this email is already activated. Please log in",
+  "fieldErrors": null
+}
+```
+
+Response `429 Too Many Requests` с заголовком `Retry-After: 259140` (секунды до истечения кода, после которого попытка снова доступна); в `message` то же время, округленное вверх до минут:
+
+```json
+{
+  "id": "8d3c2f4a-1b7e-4c55-a0f2-6e9b8d7c5a43",
+  "code": "TOO_MANY_REQUESTS",
+  "message": "Registration attempts limit reached. Try again in 2 d 23 h 59 min. If you cannot restore access yourself, contact my-cld@yandex.ru",
+  "fieldErrors": null
+}
+```
+
+Ошибка отправки письма после commit: user и код остаются в БД и учитываются в лимите. HTTP-ответ на этот случай пока не стандартизирован (не `ErrorResponse`).
 
 ### `GET /api/v1/auth/register/confirm?code=...`
 

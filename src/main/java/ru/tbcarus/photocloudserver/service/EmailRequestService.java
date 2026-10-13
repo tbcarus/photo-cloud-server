@@ -8,12 +8,14 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import ru.tbcarus.photocloudserver.exception.BadRegistrationRequest;
 import ru.tbcarus.photocloudserver.exception.ErrorType;
+import ru.tbcarus.photocloudserver.exception.RegistrationLimitExceededException;
 import ru.tbcarus.photocloudserver.model.EmailRequest;
 import ru.tbcarus.photocloudserver.model.EmailRequestType;
 import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.repository.EmailRequestRepository;
 import ru.tbcarus.photocloudserver.repository.UserRepository;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -36,11 +38,15 @@ public class EmailRequestService {
     private int activeRequestsMax;
 
     @PostConstruct
-    void validateValidDays() {
+    void validateConfig() {
         if (activationValidDays < 1 || resetValidDays < 1) {
             throw new IllegalStateException(String.format(
                     "auth.request.activation-valid-days=%d and auth.request.reset-valid-days=%d must be at least 1",
                     activationValidDays, resetValidDays));
+        }
+        if (activeRequestsMax < 1) {
+            throw new IllegalStateException(String.format(
+                    "auth.request.active-max=%d must be at least 1", activeRequestsMax));
         }
     }
 
@@ -55,13 +61,25 @@ public class EmailRequestService {
         return save;
     }
 
-    public EmailRequest checkAndGenerateCode(User user, EmailRequestType type) {
-        int tokensCount = emailRequestRepository.countByUserAndTypeAndCreatedAtAfter(user, type, LocalDateTime.now().minusDays(3));
-
-        if (tokensCount >= activeRequestsMax) {
-            throw new BadRegistrationRequest(ErrorType.TOO_MUCH_REPEAT_REQUESTS);
+    // Лимит регистраций: учитываются все ACTIVATE-коды, ещё действующие по сроку на момент now, независимо от used.
+    // Граница та же, что в EmailRequest.isActive: код учитывается, пока createdAt + срок позже now.
+    public void checkActivationLimit(User user, LocalDateTime now) {
+        List<EmailRequest> activeCodes = emailRequestRepository.findAllByUserAndTypeAndCreatedAtAfterOrderByCreatedAtAsc(
+                user, EmailRequestType.ACTIVATE, now.minusDays(activationValidDays));
+        if (activeCodes.size() < activeRequestsMax) {
+            return;
         }
-        return generateEmailRequest(user, type);
+        // Попытка освобождается, когда истекает код, после которого в окне остаётся N - 1 кодов.
+        LocalDateTime retryAt = activeCodes.get(activeCodes.size() - activeRequestsMax).getCreatedAt()
+                .plusDays(activationValidDays);
+        Duration untilRetry = Duration.between(now, retryAt);
+        throw new RegistrationLimitExceededException(untilRetry.getSeconds() + (untilRetry.getNano() > 0 ? 1 : 0));
+    }
+
+    // Вызывается внутри транзакции регистрации: изменения фиксируются dirty checking при commit.
+    public void invalidateActivationCodes(User user) {
+        emailRequestRepository.findAllByUserAndTypeAndUsedFalse(user, EmailRequestType.ACTIVATE)
+                .forEach(emailRequest -> emailRequest.setUsed(true));
     }
 
     @Transactional

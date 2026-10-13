@@ -31,6 +31,7 @@ class EmailRequestServiceValidDaysTest {
 
     private static final String ACTIVATION_VALID_DAYS = "auth.request.activation-valid-days";
     private static final String RESET_VALID_DAYS = "auth.request.reset-valid-days";
+    private static final String ACTIVE_MAX = "auth.request.active-max";
 
     // Контекст Spring без БД: проверяется внедрение сроков из application.yml.
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
@@ -118,6 +119,17 @@ class EmailRequestServiceValidDaysTest {
                                 .isInstanceOf(IllegalStateException.class)
                                 .hasMessageContaining(property + "=" + value));
             }
+        }
+    }
+
+    @Test
+    void activeMaxBelowOneFailsStartup() {
+        for (int value : new int[]{0, -1}) {
+            contextRunner.withPropertyValues(ACTIVE_MAX + "=" + value).run(context ->
+                    assertThat(context).getFailure()
+                            .rootCause()
+                            .isInstanceOf(IllegalStateException.class)
+                            .hasMessageContaining(ACTIVE_MAX + "=" + value));
         }
     }
 

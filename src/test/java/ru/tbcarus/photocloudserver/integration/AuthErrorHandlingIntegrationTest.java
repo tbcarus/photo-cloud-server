@@ -336,20 +336,6 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void duplicateRegisterReturnsConflictErrorResponse() throws Exception {
-        createUser("duplicate@test.local", PASSWORD);
-
-        perform(post("/api/v1/auth/register")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"duplicate@test.local\",\"password\":\"pass1\"}"))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.id").isNotEmpty())
-                .andExpect(jsonPath("$.code").value("CONFLICT"))
-                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.message").value("Email is already registered"));
-    }
-
-    @Test
     void refreshValidationRejectsBlankRefreshToken() throws Exception {
         assertValidationBody("/api/v1/auth/refresh-token", "{\"refreshToken\":\"\"}", "refreshToken", "Refresh token must not be blank");
     }

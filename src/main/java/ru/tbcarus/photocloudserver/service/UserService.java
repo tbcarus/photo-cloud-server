@@ -8,6 +8,8 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import ru.tbcarus.photocloudserver.exception.EntityNotFoundException;
 import ru.tbcarus.photocloudserver.exception.DuplicateEmailException;
 import ru.tbcarus.photocloudserver.exception.InvalidCredentialsException;
@@ -33,25 +35,38 @@ public class UserService implements UserDetailsService {
     private final PasswordEncoder passwordEncoder;
     private final EmailRequestService emailRequestService;
     private final EmailService emailService;
+    private final PlatformTransactionManager transactionManager;
 
     public User register(RegisterRequest registerRequest) {
-        if (userRepository.existsByEmail(registerRequest.email().toLowerCase())) {
-            throw new DuplicateEmailException();
-        }
-        User user = userRegisterMapper.toUser(registerRequest);
-        user.setRoles(Set.of(Role.USER));
-        user.setEmail(user.getEmail().toLowerCase());
-        user.setPassword(passwordEncoder.encode(user.getPassword()));
-        user.setBanned(false);
-        user.setEnabled(false);
-        User savedUser = userRepository.save(user);
-        EmailRequest emailRequest = emailRequestService.generateEmailRequest(user, EmailRequestType.ACTIVATE);
+        String email = registerRequest.email().toLowerCase();
+        String passwordHash = passwordEncoder.encode(registerRequest.password());
+        // Проверки, User и ACTIVATE-код фиксируются одной транзакцией; письмо отправляется только после commit.
+        EmailRequest emailRequest = new TransactionTemplate(transactionManager).execute(status -> {
+            User user = userRepository.findByEmailIgnoreCase(email).orElse(null);
+            if (user == null) {
+                user = userRegisterMapper.toUser(registerRequest);
+                user.setRoles(Set.of(Role.USER));
+                user.setEmail(email);
+                user.setPassword(passwordHash);
+                user.setBanned(false);
+                user.setEnabled(false);
+                userRepository.save(user);
+            } else if (user.isEnabled()) {
+                throw new DuplicateEmailException();
+            } else {
+                // Повторная регистрация неактивированного пользователя: пароль последней успешной попытки, старые ссылки гасятся.
+                emailRequestService.checkActivationLimit(user, LocalDateTime.now());
+                user.setPassword(passwordHash);
+                emailRequestService.invalidateActivationCodes(user);
+            }
+            return emailRequestService.generateEmailRequest(user, EmailRequestType.ACTIVATE);
+        });
         try {
             emailService.sendEmail(emailRequest);
         } catch (MessagingException e) {
             log.error("Nothing was sent {}", e.getCause().getMessage());
         }
-        return savedUser;
+        return emailRequest.getUser();
     }
 
     public void forgotPassword (String email) {
