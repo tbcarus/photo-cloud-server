@@ -50,6 +50,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -121,7 +122,10 @@ class RegistrationIntegrationTest extends AbstractIntegrationTest {
         assertThat(codes).extracting(EmailRequest::isUsed).containsExactly(true, false);
         verify(mailSender, times(2)).send(any(MimeMessage.class));
 
-        confirm(oldCode).andExpect(status().isBadRequest());
+        confirm(oldCode)
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string(containsString("<h1>Ссылка устарела</h1>")));
+        assertThat(user().isEnabled()).isFalse();
         confirm(codes.get(1).getCode()).andExpect(status().isOk());
         loginAndGetAccessToken(EMAIL, "pass2");
         login(EMAIL, "pass1").andExpect(status().isUnauthorized());

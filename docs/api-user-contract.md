@@ -43,7 +43,7 @@ Access token живет 20 минут. Refresh token живет 7 дней, хр
 
 | Status | Когда |
 | --- | --- |
-| 400 | validation error, malformed body, missing query param, неверный/использованный/истекший email-code |
+| 400 | validation error, malformed body, missing query param, неверный/использованный/истекший email-code (для `register/confirm` — HTML-страница, см. ниже) |
 | 401 | неверный login/password, disabled/banned user, invalid refresh token, нет или невалидный access token |
 | 403 | refresh token отозван или принадлежит другому пользователю |
 | 404 | refresh token не найден в logout/logout-others |
@@ -129,15 +129,19 @@ Response `503 Service Unavailable` — письмо не удалось сфор
 
 ### `GET /api/v1/auth/register/confirm?code=...`
 
-Публичный endpoint. Подтверждает регистрацию по коду `ACTIVATE`, если код существует, не использован и не истек.
+Публичный endpoint для ссылки из письма. Подтверждает регистрацию по коду `ACTIVATE`, если код существует, не использован и не истек.
 
-Response `200 OK`:
+Ответ всегда HTML-страница (`Content-Type: text/html;charset=UTF-8`), JSON `ErrorResponse` не возвращается. Отказ не меняет user и код. Причина отказа определяется в порядке строк таблицы:
 
-```text
-User user@example.com was verified
-```
+| Status | Условие | Заголовок страницы |
+| --- | --- | --- |
+| 200 | код принят, user активирован | «Адрес подтверждён» — вернуться в приложение и войти |
+| 400 | `code` отсутствует, не найден или имеет тип не `ACTIVATE` | «Ссылка недействительна» |
+| 400 | user кода уже активирован | «Адрес уже подтверждён» — войти в приложение |
+| 400 | код использован, user не активирован (аннулирован повторной регистрацией) | «Ссылка устарела» — открыть ссылку из последнего письма |
+| 400 | срок кода истек | «Срок действия ссылки истёк» — зарегистрироваться повторно |
 
-Ошибка неверного/использованного/истекшего кода возвращается как `400 BAD_REGISTRATION_REQUEST`.
+Ошибка БД при фиксации активации обрабатывается общим обработчиком и возвращается как JSON `500 DATABASE_CONSTRAINT_VIOLATION`.
 
 ### `POST /api/v1/auth/register/resend`
 

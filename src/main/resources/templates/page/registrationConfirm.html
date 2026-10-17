@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<!--@thymesVar id="result" type="java.lang.String"-->
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PhotoCloud — подтверждение регистрации</title>
+    <style>
+        body { margin: 0; padding: 24px 16px; font-family: sans-serif; line-height: 1.5; color: #222; background: #f4f6f7; }
+        main { max-width: 480px; margin: 0 auto; padding: 24px; background: #fff; border-radius: 8px; }
+        h1 { margin-top: 0; font-size: 1.4em; }
+    </style>
+</head>
+<body>
+<main th:switch="${result}">
+    <div th:case="'ACTIVATED'">
+        <h1>Адрес подтверждён</h1>
+        <p>Регистрация завершена. Вернитесь в приложение PhotoCloud и войдите с вашим email и паролем.</p>
+    </div>
+    <div th:case="'ALREADY_ACTIVE'">
+        <h1>Адрес уже подтверждён</h1>
+        <p>Эта ссылка уже использована, аккаунт активен. Войдите в приложение PhotoCloud.</p>
+    </div>
+    <div th:case="'INVALIDATED'">
+        <h1>Ссылка устарела</h1>
+        <p>После этого письма была выполнена повторная регистрация, поэтому ссылка больше не действует.
+            Откройте ссылку из последнего письма.</p>
+    </div>
+    <div th:case="'EXPIRED'">
+        <h1>Срок действия ссылки истёк</h1>
+        <p>Зарегистрируйтесь в приложении PhotoCloud повторно с тем же email — придёт новое письмо.</p>
+    </div>
+    <div th:case="*">
+        <h1>Ссылка недействительна</h1>
+        <p>Проверьте, что ссылка открыта полностью, без обрезанных символов.
+            Если это не помогает, зарегистрируйтесь в приложении PhotoCloud повторно.</p>
+    </div>
+</main>
+</body>
+</html>

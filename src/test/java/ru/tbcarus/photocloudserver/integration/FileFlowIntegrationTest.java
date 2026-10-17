@@ -265,6 +265,10 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
                 .andReturn();
 
         FileItemDto moved = objectMapper.readValue(result.getResponse().getContentAsString(), FileItemDto.class);
+        // Поля ответа берутся из StoredObject: маппинг не должен обращаться к нему вне сессии.
+        assertThat(moved.getFolderId()).isEqualTo(targetFolderId);
+        assertThat(moved.getMimeType()).isEqualTo(uploaded.getMimeType());
+        assertThat(moved.getChecksum()).isEqualTo(uploaded.getChecksum());
         FileItem after = findFileItem(moved.getId());
         assertThat(after.getFolder().getId()).isEqualTo(targetFolderId);
         assertThat(after.getStoredObject().getId()).isEqualTo(storedObjectId);
@@ -289,6 +293,9 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
                 .andReturn();
 
         FileItemDto renamed = objectMapper.readValue(result.getResponse().getContentAsString(), FileItemDto.class);
+        assertThat(renamed.getOriginalFilename()).isEqualTo("after.txt");
+        assertThat(renamed.getMimeType()).isEqualTo(uploaded.getMimeType());
+        assertThat(renamed.getSize()).isEqualTo(uploaded.getSize());
         FileItem after = findFileItem(renamed.getId());
         assertThat(after.getOriginalName()).isEqualTo("after.txt");
         assertThat(after.getStoredObject().getFilename()).isEqualTo(physicalFilename);

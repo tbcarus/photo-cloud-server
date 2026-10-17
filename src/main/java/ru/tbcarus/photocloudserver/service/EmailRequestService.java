@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import ru.tbcarus.photocloudserver.exception.BadRegistrationRequest;
 import ru.tbcarus.photocloudserver.exception.ErrorType;
 import ru.tbcarus.photocloudserver.exception.RegistrationLimitExceededException;
+import ru.tbcarus.photocloudserver.model.ActivationResult;
 import ru.tbcarus.photocloudserver.model.EmailRequest;
 import ru.tbcarus.photocloudserver.model.EmailRequestType;
 import ru.tbcarus.photocloudserver.model.User;
@@ -93,13 +94,30 @@ public class EmailRequestService {
     }
 
     @Transactional
-    public String confirmRegistration(String code) {
-        EmailRequest emailRequest = getEmailRequestByCode(code);
-        checkEmailRequest(emailRequest, EmailRequestType.ACTIVATE);
-        User user = userRepository.findById(emailRequest.getUser().getId()).orElseThrow(() -> new BadRegistrationRequest(ErrorType.NOT_FOUND));
-        emailRequest.setUsed(true);
-        user.setEnabled(true);
-        return user.getEmail();
+    public ActivationResult confirmRegistration(String code) {
+        EmailRequest emailRequest = code == null ? null : emailRequestRepository.findByCode(code).orElse(null);
+        if (emailRequest == null || emailRequest.getType() != EmailRequestType.ACTIVATE) {
+            return ActivationResult.INVALID_LINK;
+        }
+        User user = userRepository.findById(emailRequest.getUser().getId()).orElse(null);
+        if (user == null) {
+            return ActivationResult.INVALID_LINK;
+        }
+        // Правило приёма прежнее: код ACTIVATE, не использован и не истёк.
+        if (!emailRequest.isUsed() && emailRequest.isActive(activationValidDays)) {
+            emailRequest.setUsed(true);
+            user.setEnabled(true);
+            return ActivationResult.ACTIVATED;
+        }
+        // Отказ: причина определяется только для страницы, состояние не меняется.
+        if (user.isEnabled()) {
+            return ActivationResult.ALREADY_ACTIVE;
+        }
+        // used без активации аккаунта ставит только повторная регистрация (invalidateActivationCodes).
+        if (emailRequest.isUsed()) {
+            return ActivationResult.INVALIDATED;
+        }
+        return ActivationResult.EXPIRED;
     }
 
     @Transactional

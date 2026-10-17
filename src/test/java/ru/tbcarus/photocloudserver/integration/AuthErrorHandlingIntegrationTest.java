@@ -11,6 +11,7 @@ import org.springframework.mail.MailSendException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import ru.tbcarus.photocloudserver.model.EmailRequest;
 import ru.tbcarus.photocloudserver.model.EmailRequestType;
 import ru.tbcarus.photocloudserver.model.RefreshToken;
@@ -21,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
@@ -44,19 +46,31 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
     private JavaMailSender mailSender;
 
     @Test
-    void invalidRegistrationCodeReturnsBadRequestErrorResponse() throws Exception {
-        perform(get("/api/v1/auth/register/confirm").param("code", "missing-code"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.id").isNotEmpty())
-                .andExpect(jsonPath("$.code").value("BAD_REGISTRATION_REQUEST"))
-                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.message").isNotEmpty());
+    void freshRegistrationCodeActivatesUserAndShowsSuccessPage() throws Exception {
+        User user = createUser("fresh-confirm@test.local", PASSWORD, false, false);
+        String code = saveEmailRequest(user, "fresh-confirm-code", EmailRequestType.ACTIVATE);
+
+        assertConfirmPage(code, 200, "Адрес подтверждён");
+
+        assertActivationState(user, code, true, true);
+        loginAndGetAccessToken("fresh-confirm@test.local", PASSWORD);
     }
 
     @Test
-    void usedRegistrationCodeReturnsBadRequestErrorResponse() throws Exception {
-        User user = createUser("used-confirm@test.local", PASSWORD);
-        String code = "used-confirm-code";
+    void secondVisitOfUsedLinkShowsAlreadyActivePage() throws Exception {
+        User user = createUser("twice-confirm@test.local", PASSWORD, false, false);
+        String code = saveEmailRequest(user, "twice-confirm-code", EmailRequestType.ACTIVATE);
+        assertConfirmPage(code, 200, "Адрес подтверждён");
+
+        assertConfirmPage(code, 400, "Адрес уже подтверждён");
+
+        assertActivationState(user, code, true, true);
+    }
+
+    @Test
+    void invalidatedLinkOfInactiveUserShowsInvalidatedPage() throws Exception {
+        User user = createUser("invalidated-confirm@test.local", PASSWORD, false, false);
+        String code = "invalidated-confirm-code";
         emailRequestRepository.save(EmailRequest.builder()
                 .code(code)
                 .type(EmailRequestType.ACTIVATE)
@@ -64,71 +78,30 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                 .user(user)
                 .build());
 
-        perform(get("/api/v1/auth/register/confirm").param("code", code))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.id").isNotEmpty())
-                .andExpect(jsonPath("$.code").value("BAD_REGISTRATION_REQUEST"))
-                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.message").isNotEmpty());
+        assertConfirmPage(code, 400, "Ссылка устарела");
+
+        assertActivationState(user, code, false, true);
     }
 
     @Test
-    void expiredRegistrationCodeReturnsBadRequestErrorResponse() throws Exception {
-        User user = createUser("expired-confirm@test.local", PASSWORD);
-        String code = "expired-confirm-code";
-        emailRequestRepository.save(EmailRequest.builder()
-                .code(code)
-                .type(EmailRequestType.ACTIVATE)
-                .used(false)
-                .user(user)
-                .build());
+    void expiredRegistrationCodeShowsExpiredPage() throws Exception {
+        User user = createUser("expired-confirm@test.local", PASSWORD, false, false);
+        String code = saveEmailRequest(user, "expired-confirm-code", EmailRequestType.ACTIVATE);
         jdbcTemplate.update(
                 "UPDATE email_requests SET created_at = ? WHERE code = ?",
                 LocalDateTime.now().minusDays(4),
                 code
         );
 
-        perform(get("/api/v1/auth/register/confirm").param("code", code))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.id").isNotEmpty())
-                .andExpect(jsonPath("$.code").value("BAD_REGISTRATION_REQUEST"))
-                .andExpect(jsonPath("$.fieldErrors").value(org.hamcrest.Matchers.nullValue()))
-                .andExpect(jsonPath("$.message").isNotEmpty());
+        assertConfirmPage(code, 400, "Срок действия ссылки истёк");
+
+        assertActivationState(user, code, false, false);
     }
 
     @Test
-    void freshRegistrationCodeActivatesUser() throws Exception {
-        User user = createUser("fresh-confirm@test.local", PASSWORD, false, false);
-        String code = "fresh-confirm-code";
-        emailRequestRepository.save(EmailRequest.builder()
-                .code(code)
-                .type(EmailRequestType.ACTIVATE)
-                .used(false)
-                .user(user)
-                .build());
-
-        perform(get("/api/v1/auth/register/confirm").param("code", code))
-                .andExpect(status().isOk())
-                .andExpect(content().string("User fresh-confirm@test.local was verified"));
-
-        assertThat(userRepository.findById(user.getId()).orElseThrow().isEnabled()).isTrue();
-        assertThat(emailRequestRepository.findByCode(code).orElseThrow().isUsed()).isTrue();
-        loginAndGetAccessToken("fresh-confirm@test.local", PASSWORD);
-    }
-
-    @Test
-    void registrationCodeCannotBeUsedTwice() throws Exception {
-        User user = createUser("twice-confirm@test.local", PASSWORD, false, false);
-        String code = saveEmailRequest(user, "twice-confirm-code", EmailRequestType.ACTIVATE);
-
-        perform(get("/api/v1/auth/register/confirm").param("code", code))
-                .andExpect(status().isOk());
-        perform(get("/api/v1/auth/register/confirm").param("code", code))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("BAD_REGISTRATION_REQUEST"));
-
-        assertThat(userRepository.findById(user.getId()).orElseThrow().isEnabled()).isTrue();
-        assertThat(emailRequestRepository.findByCode(code).orElseThrow().isUsed()).isTrue();
+    void unknownOrMissingRegistrationCodeShowsInvalidLinkPage() throws Exception {
+        assertConfirmPage("missing-code", 400, "Ссылка недействительна");
+        assertConfirmPage(null, 400, "Ссылка недействительна");
     }
 
     @Test
@@ -136,12 +109,9 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
         User user = createUser("reset-type-confirm@test.local", PASSWORD, false, false);
         String code = saveEmailRequest(user, "reset-type-confirm-code", EmailRequestType.PASSWORD_RESET);
 
-        perform(get("/api/v1/auth/register/confirm").param("code", code))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("BAD_REGISTRATION_REQUEST"));
+        assertConfirmPage(code, 400, "Ссылка недействительна");
 
-        assertThat(userRepository.findById(user.getId()).orElseThrow().isEnabled()).isFalse();
-        assertThat(emailRequestRepository.findByCode(code).orElseThrow().isUsed()).isFalse();
+        assertActivationState(user, code, false, false);
     }
 
     @Test
@@ -617,6 +587,22 @@ class AuthErrorHandlingIntegrationTest extends AbstractIntegrationTest {
                 .user(user)
                 .build());
         return code;
+    }
+
+    private void assertConfirmPage(String code, int expectedStatus, String expectedHeading) throws Exception {
+        MockHttpServletRequestBuilder request = get("/api/v1/auth/register/confirm");
+        if (code != null) {
+            request.param("code", code);
+        }
+        perform(request)
+                .andExpect(status().is(expectedStatus))
+                .andExpect(content().contentType("text/html;charset=UTF-8"))
+                .andExpect(content().string(containsString("<h1>" + expectedHeading + "</h1>")));
+    }
+
+    private void assertActivationState(User user, String code, boolean enabled, boolean used) {
+        assertThat(userRepository.findById(user.getId()).orElseThrow().isEnabled()).isEqualTo(enabled);
+        assertThat(emailRequestRepository.findByCode(code).orElseThrow().isUsed()).isEqualTo(used);
     }
 
     // Временный CHECK ... NOT VALID не проверяет существующие строки, но отклоняет UPDATE одной из таблиц при commit активации.

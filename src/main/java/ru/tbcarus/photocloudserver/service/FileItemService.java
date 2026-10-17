@@ -193,21 +193,32 @@ public class FileItemService {
     }
 
     public FileItemDto renameFileForCurrentUser(Long fileId, RenameFileRequest request, User user) {
-        FileItem file = getFileForCurrentUser(fileId, user);
         String originalName = normalizeOriginalName(request.originalName());
-        // Переименование меняет только логическую запись: физическое имя стабильно и принадлежит object storage.
-        ensureFileNameAvailable(user.getId(), file.getFolder(), originalName, file.getId());
-        file.setOriginalName(originalName);
-        return fileItemMapper.toDto(fileItemRepository.save(file));
+        // Изменяем managed-сущность в одной транзакции: save() detached-объекта через merge вернул бы копию
+        // с неинициализированным proxy StoredObject, и маппинг после закрытия сессии упал бы с LazyInitializationException.
+        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+        FileItem renamed = transactionTemplate.execute(status -> {
+            FileItem file = getFileForCurrentUser(fileId, user);
+            // Переименование меняет только логическую запись: физическое имя стабильно и принадлежит object storage.
+            ensureFileNameAvailable(user.getId(), file.getFolder(), originalName, file.getId());
+            file.setOriginalName(originalName);
+            return fileItemRepository.save(file);
+        });
+        return fileItemMapper.toDto(renamed);
     }
 
     public FileItemDto moveFileForCurrentUser(Long fileId, MoveFileRequest request, User user) {
-        FileItem file = getFileForCurrentUser(fileId, user);
-        Folder targetFolder = folderService.getFolderForUser(request.targetFolderId(), user);
-        // Физический файл не перемещаем: дерево папок живёт в БД, а storage работает как object storage.
-        ensureFileNameAvailable(user.getId(), targetFolder, file.getOriginalName(), file.getId());
-        file.setFolder(targetFolder);
-        return fileItemMapper.toDto(fileItemRepository.save(file));
+        // Как и rename: работаем с managed-сущностью, загруженной вместе со StoredObject и metadata.
+        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+        FileItem moved = transactionTemplate.execute(status -> {
+            FileItem file = getFileForCurrentUser(fileId, user);
+            Folder targetFolder = folderService.getFolderForUser(request.targetFolderId(), user);
+            // Физический файл не перемещаем: дерево папок живёт в БД, а storage работает как object storage.
+            ensureFileNameAvailable(user.getId(), targetFolder, file.getOriginalName(), file.getId());
+            file.setFolder(targetFolder);
+            return fileItemRepository.save(file);
+        });
+        return fileItemMapper.toDto(moved);
     }
 
     public FileItemDto copyFileForCurrentUser(Long fileId, CopyFileRequest request, User user) throws IOException {
