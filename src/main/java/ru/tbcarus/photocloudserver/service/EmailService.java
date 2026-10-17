@@ -39,6 +39,9 @@ public class EmailService {
     @Value("${spring.mail.mail-from}")
     private String mailFrom;
 
+    @Value("${auth.request.activation-valid-days}")
+    private int activationValidDays;
+
     public static final String CONFIRMATION_EMAIL_TEMPLATE = "email/confirmationTemplate";
     public static final String PASSWORD_RESET_EMAIL_TEMPLATE = "email/passwordResetTemplate";
 
@@ -84,6 +87,9 @@ public class EmailService {
         String displayName = emailRequest.getUser().getDisplayName();
         map.put("name", displayName != null ? displayName : emailRequest.getUser().getEmail());
         map.put("emailRequest", emailRequest);
+        if (EmailRequestType.ACTIVATE.equals(emailRequest.getType())) {
+            map.put("activationValidDays", activationValidDays);
+        }
         ServletRequestAttributes servletRequestAttributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         HttpServletRequest request = Objects.requireNonNull(servletRequestAttributes).getRequest();
         String targetPath = EmailRequestType.ACTIVATE.equals(emailRequest.getType())
