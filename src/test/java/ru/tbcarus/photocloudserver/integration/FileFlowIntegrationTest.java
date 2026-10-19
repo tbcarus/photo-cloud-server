@@ -16,6 +16,7 @@ import ru.tbcarus.photocloudserver.model.dto.FileItemDto;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -855,7 +856,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void physicalFilenameComponentIsLimitedTo255Characters() throws Exception {
+    void physicalFilenameComponentIsLimitedTo255Bytes() throws Exception {
         createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
         String longFilename = "a".repeat(300) + ".jpg";
@@ -863,8 +864,25 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         FileItemDto uploaded = upload(token, longFilename, "image/jpeg", "long".getBytes());
 
         String filename = findFileItem(uploaded.getId()).getStoredObject().getFilename();
-        assertThat(filename.length()).isLessThanOrEqualTo(255);
+        assertThat(filename.getBytes(StandardCharsets.UTF_8).length).isLessThanOrEqualTo(255);
         assertThat(filename).endsWith(".jpg");
+    }
+
+    @Test
+    void multibyteNameIsShortenedOnlyInPhysicalFilename() throws Exception {
+        createUser("user1@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
+        // 204 символа укладываются в логический лимит, но в UTF-8 занимают 604 байта.
+        String longFilename = "漢".repeat(200) + ".jpg";
+
+        FileItemDto uploaded = upload(token, longFilename, "image/jpeg", "multibyte".getBytes());
+
+        FileItem fileItem = findFileItem(uploaded.getId());
+        String filename = fileItem.getStoredObject().getFilename();
+        assertThat(uploaded.getOriginalFilename()).isEqualTo(longFilename);
+        assertThat(filename.getBytes(StandardCharsets.UTF_8).length).isLessThanOrEqualTo(255);
+        assertThat(filename).startsWith("漢").contains(".jpg_").endsWith(".jpg");
+        assertThat(Files.exists(storedObjectPath(fileItem.getStoredObject()))).isTrue();
     }
 
     @Test
