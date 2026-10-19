@@ -14,13 +14,20 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.nio.file.Path;
+import java.time.DateTimeException;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.util.Date;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Component
 public class DrewFileMetadataExtractor implements FileMetadataExtractor {
+
+    // Стандарт EXIF — "yyyy:MM:dd HH:mm:ss"; как и metadata-extractor, принимаем разделители даты "-"/".", "T"
+    // и время без секунд. Дробная часть и пояс в конце строки допускаются, пояс игнорируется.
+    private static final Pattern EXIF_DATE_TIME = Pattern.compile(
+            "(\\d{4})[:.-](\\d{2})[:.-](\\d{2})[ T](\\d{2}):(\\d{2})(?::(\\d{2}))?(?:\\.(\\d+))?(?:\\s*(?:Z|[+-]\\d{2}:?\\d{2}))?");
+    private static final Pattern SUBSECONDS = Pattern.compile("\\d+");
 
     @Override
     public ExtractedFileMetadata extract(Path file, String mimeType) {
@@ -55,11 +62,40 @@ public class DrewFileMetadataExtractor implements FileMetadataExtractor {
         if (directory == null) {
             return null;
         }
-        Date date = directory.getDateOriginal();
-        if (date == null) {
-            date = directory.getDateDigitized();
+        LocalDateTime original = exifLocalDateTime(directory,
+                ExifSubIFDDirectory.TAG_DATETIME_ORIGINAL, ExifSubIFDDirectory.TAG_SUBSECOND_TIME_ORIGINAL);
+        return original != null ? original : exifLocalDateTime(directory,
+                ExifSubIFDDirectory.TAG_DATETIME_DIGITIZED, ExifSubIFDDirectory.TAG_SUBSECOND_TIME_DIGITIZED);
+    }
+
+    // EXIF хранит местное время камеры строкой без пояса. Берём календарные дату и время как записаны:
+    // getDateOriginal() читает строку как GMT (или по OffsetTime*), и перевод в пояс сервера сдвигал дату вплоть до года.
+    // Свой строгий разбор вместо lenient SimpleDateFormat библиотеки, чтобы заглушка "0000:00:00 00:00:00" не стала датой.
+    private LocalDateTime exifLocalDateTime(ExifSubIFDDirectory directory, int dateTimeTag, int subsecondTag) {
+        String value = directory.getString(dateTimeTag);
+        Matcher matcher = value == null ? null : EXIF_DATE_TIME.matcher(value.trim());
+        if (matcher == null || !matcher.matches()) {
+            return null;
         }
-        return date == null ? null : LocalDateTime.ofInstant(date.toInstant(), ZoneId.systemDefault());
+        try {
+            LocalDateTime dateTime = LocalDateTime.of(
+                    Integer.parseInt(matcher.group(1)),
+                    Integer.parseInt(matcher.group(2)),
+                    Integer.parseInt(matcher.group(3)),
+                    Integer.parseInt(matcher.group(4)),
+                    Integer.parseInt(matcher.group(5)),
+                    matcher.group(6) == null ? 0 : Integer.parseInt(matcher.group(6)));
+            String fraction = matcher.group(7) != null ? matcher.group(7) : directory.getString(subsecondTag);
+            if (fraction == null || !SUBSECONDS.matcher(fraction.trim()).matches()) {
+                return dateTime;
+            }
+            // Дробная часть секунды до микросекунд — точности TIMESTAMP в PostgreSQL.
+            String micros = (fraction.trim() + "00000").substring(0, 6);
+            return dateTime.withNano(Integer.parseInt(micros) * 1000);
+        } catch (DateTimeException ex) {
+            // Несуществующая календарная дата (нулевой месяц, 31 февраля и т. п.) означает отсутствие пригодной даты.
+            return null;
+        }
     }
 
     private Integer width(Metadata metadata) {

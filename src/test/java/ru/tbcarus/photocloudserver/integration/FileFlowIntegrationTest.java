@@ -12,6 +12,7 @@ import ru.tbcarus.photocloudserver.model.FileType;
 import ru.tbcarus.photocloudserver.model.FolderType;
 import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.model.dto.FileItemDto;
+import ru.tbcarus.photocloudserver.service.metadata.ExifJpegFixture;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -22,6 +23,7 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -895,6 +897,34 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         assertThat(uploaded.getMetadata()).isNull();
         assertThat(uploaded.getCapturedAt()).isEqualTo(uploaded.getUploadedAt());
         assertThat(findFileItem(uploaded.getId()).getMetadata()).isNull();
+    }
+
+    @Test
+    void capturedAtIsExifLocalDateTimeWithoutTimeZoneShift() throws Exception {
+        createUser("user1@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
+        // Смещение камеры +09:00 не должно переводить 31 декабря в другой момент или год по поясу сервера.
+        byte[] jpeg = ExifJpegFixture.jpegWithExifTags(Map.of(
+                ExifJpegFixture.DATE_TIME_ORIGINAL, "2023:12:31 23:30:15",
+                ExifJpegFixture.OFFSET_TIME_ORIGINAL, "+09:00"));
+
+        FileItemDto uploaded = upload(token, "new-year.jpg", "image/jpeg", jpeg);
+
+        LocalDateTime expected = LocalDateTime.of(2023, 12, 31, 23, 30, 15);
+        assertThat(uploaded.getCapturedAt()).isEqualTo(expected);
+        assertThat(findFileItem(uploaded.getId()).getCapturedAt()).isEqualTo(expected);
+    }
+
+    @Test
+    void capturedAtFallsBackToUploadedAtForImageWithoutUsableExifDate() throws Exception {
+        createUser("user1@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
+        byte[] jpeg = ExifJpegFixture.jpegWithExifTags(Map.of(ExifJpegFixture.DATE_TIME_ORIGINAL, "0000:00:00 00:00:00"));
+
+        FileItemDto uploaded = upload(token, "no-date.jpg", "image/jpeg", jpeg);
+
+        assertThat(uploaded.getFileType()).isEqualTo(FileType.IMAGE);
+        assertThat(uploaded.getCapturedAt()).isEqualTo(uploaded.getUploadedAt());
     }
 
     @Test
