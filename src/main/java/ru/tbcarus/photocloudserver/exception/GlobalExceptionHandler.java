@@ -1,6 +1,7 @@
 package ru.tbcarus.photocloudserver.exception;
 
 import jakarta.validation.ConstraintViolationException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -14,10 +15,12 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import ru.tbcarus.photocloudserver.exception.dto.ErrorCode;
 import ru.tbcarus.photocloudserver.exception.dto.ErrorResponse;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -162,6 +165,16 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleIllegalArgumentException(IllegalArgumentException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(error(ErrorCode.BAD_REQUEST, e.getMessage()));
+    }
+
+    // Ошибки физического хранилища (в т.ч. занятый путь) — 5xx, а не 409: Android считает 409 постоянной ошибкой.
+    // Обработка здесь не даёт исключению уйти в /error, где без аутентификации ответ стал бы 401.
+    // Сообщение общее: текст IOException содержит физические пути.
+    @ExceptionHandler(IOException.class)
+    public ResponseEntity<ErrorResponse> handleIoException(IOException e) {
+        log.error("Ошибка операции с физическим хранилищем", e);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(error(ErrorCode.INTERNAL_ERROR, "Physical storage operation failed"));
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

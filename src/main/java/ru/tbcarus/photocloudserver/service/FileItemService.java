@@ -43,13 +43,14 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigDecimal;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 
 @Service
 @RequiredArgsConstructor
@@ -77,9 +78,8 @@ public class FileItemService {
             throw new IllegalArgumentException("Файл пустой");
         }
 
+        // temp принадлежит операции до публикации; дальше судьбу байтов решают publishExclusively и saveForPublishedFile.
         Path tempFile = null;
-        Path finalFile = null;
-        boolean movedToFinal = false;
 
         try {
             // Сначала пишем во временный файл: так checksum, размер, MIME и metadata считаются без загрузки всего файла в память.
@@ -114,15 +114,15 @@ public class FileItemService {
             String filePath = storageKeyGenerator.generateFilePath(user.getId(), folder.getFolderType(), capturedAt);
             String filename = storageKeyGenerator.generateFilename(originalName, detectedMimeType);
             String fileExtension = filenameSanitizer.extension(originalName, detectedMimeType);
-            finalFile = storagePathResolver.resolve(filePath, filename);
+            Path finalFile = storagePathResolver.resolve(filePath, filename);
 
-            // Move делаем до БД: если файловая операция не удалась, в базе не появится ссылка на отсутствующий файл.
-            moveTempToFinal(tempFile, finalFile);
-            movedToFinal = true;
+            // Публикуем до БД: если файловая операция не удалась, в базе не появится ссылка на отсутствующий файл.
+            publishExclusively(tempFile, finalFile);
             tempFile = null;
 
+            FileItem saved;
             try {
-                FileItem saved = createStoredObjectAndFileItem(
+                saved = createStoredObjectAndFileItem(
                         user,
                         folder,
                         originalName,
@@ -135,29 +135,23 @@ public class FileItemService {
                         checksum,
                         size,
                         detectedMimeType,
-                        fileType
+                        fileType,
+                        finalFile
                 );
-                return fileItemMapper.toDto(saved);
             } catch (DataIntegrityViolationException ex) {
                 // Гонка: параллельный upload уже создал FileItem с таким checksum в этой папке (уникальность user+folder+checksum).
-                // Свой только что перенесённый физический файл удаляем и возвращаем уже существующий FileItem.
-                deleteIfExists(finalFile);
+                // Свой файл saveForPublishedFile уже удалил при откате (или оставил при неизвестном исходе фиксации).
                 FileItem racedFileItem = fileItemRepository
                         .findFirstByUserIdAndFolderIdAndChecksumOrderByIdAsc(user.getId(), folder.getId(), checksum)
                         .orElseThrow(() -> ex);
                 return fileItemMapper.toDto(racedFileItem);
-            } catch (RuntimeException ex) {
-                // Если БД упала после move, удаляем уже перенесённый final-файл, чтобы не оставить orphan на диске.
-                deleteIfExists(finalFile);
-                throw ex;
             }
+            // DTO строим после фиксации: ошибка маппинга не должна удалять байты уже сохранённой записи.
+            return fileItemMapper.toDto(saved);
         } catch (RuntimeException | IOException ex) {
-            // Общий cleanup закрывает ошибки streaming, лимита размера и move; после move final удаляется отдельно.
+            // До публикации удаляем только собственный temp; опубликованный файл здесь не трогаем.
             if (tempFile != null) {
                 deleteIfExists(tempFile);
-            }
-            if (movedToFinal && finalFile != null) {
-                deleteIfExists(finalFile);
             }
             throw ex;
         }
@@ -248,12 +242,16 @@ public class FileItemService {
         String filePath = sourceStoredObject.getFilePath();
         String filename = storageKeyGenerator.generateFilename(originalName, sourceStoredObject.getDetectedMimeType());
         Path copiedPath = storagePathResolver.resolve(filePath, filename);
-        boolean copied = false;
+        Path tempFile = null;
 
         try {
-            Files.createDirectories(copiedPath.getParent());
-            Files.copy(sourcePath, copiedPath);
-            copied = true;
+            // Копируем в собственный temp: в конечном каталоге появляется только полностью записанная копия.
+            tempFile = createTempFile();
+            try (OutputStream outputStream = Files.newOutputStream(tempFile)) {
+                Files.copy(sourcePath, outputStream);
+            }
+            publishExclusively(tempFile, copiedPath);
+            tempFile = null;
 
             // Copy намеренно не использует dedup: пользователь получает независимый физический объект.
             FileItem saved = createCopiedStoredObjectAndFileItem(
@@ -263,13 +261,15 @@ public class FileItemService {
                     sourceStoredObject,
                     originalName,
                     filePath,
-                    filename
+                    filename,
+                    copiedPath
             );
+            // DTO строим после фиксации: ошибка маппинга не должна удалять байты уже сохранённой записи.
             return fileItemMapper.toDto(saved);
         } catch (RuntimeException | IOException ex) {
-            if (copied) {
-                // Если БД упала после физического копирования, удаляем orphan-файл.
-                deleteIfExists(copiedPath);
+            // До публикации удаляем только собственный temp; опубликованный файл здесь не трогаем.
+            if (tempFile != null) {
+                deleteIfExists(tempFile);
             }
             throw ex;
         }
@@ -343,7 +343,7 @@ public class FileItemService {
     private Path createTempFile() throws IOException {
         Path tempDir = Path.of(storageProperties.getTempDir()).toAbsolutePath().normalize();
         Files.createDirectories(tempDir);
-        // TODO: temp-dir должен оставаться на той же файловой системе, что и storage.root, чтобы move был дешёвым и по возможности atomic.
+        // temp-dir обязан быть на той же файловой системе, что и storage.root: publishExclusively публикует только через ATOMIC_MOVE.
         return Files.createTempFile(tempDir, "upload-", ".tmp");
     }
 
@@ -354,13 +354,42 @@ public class FileItemService {
         }
     }
 
-    private void moveTempToFinal(Path tempFile, Path finalFile) throws IOException {
+    // Публикует полностью записанный temp под конечным именем и никогда не заменяет существующий файл.
+    // При ошибке temp остаётся у вызывающего кода, а под конечным именем ничего своего не остаётся.
+    private void publishExclusively(Path tempFile, Path finalFile) throws IOException {
         Files.createDirectories(finalFile.getParent());
+        // CREATE_NEW атомарно резервирует имя: занятый путь даёт FileAlreadyExistsException, чужой файл не трогаем.
+        Files.createFile(finalFile);
         try {
+            // ATOMIC_MOVE заменяет только собственную пустую заглушку. Fallback для переноса между ФС не используем:
+            // он записывал бы байты прямо в конечный файл, поэтому AtomicMoveNotSupportedException — ошибка операции.
             Files.move(tempFile, finalFile, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException ex) {
-            // Atomic move доступен не всегда; cleanup вокруг вызова всё равно удалит temp/final при ошибках.
-            Files.move(tempFile, finalFile);
+        } catch (IOException | RuntimeException ex) {
+            // Перенос не состоялся: под конечным именем всё ещё наша заглушка.
+            deleteIfExists(finalFile);
+            throw ex;
+        }
+    }
+
+    // Сохраняет записи для уже опубликованного файла и решает судьбу его байтов при ошибке.
+    private FileItem saveForPublishedFile(Path publishedFile, Supplier<FileItem> save) {
+        AtomicBoolean callbackCompleted = new AtomicBoolean();
+        try {
+            return new TransactionTemplate(transactionManager).execute(status -> {
+                FileItem saved = save.get();
+                callbackCompleted.set(true);
+                return saved;
+            });
+        } catch (RuntimeException ex) {
+            if (callbackCompleted.get()) {
+                // Ошибка при фиксации: транзакция могла быть зафиксирована. Лучше orphan-файл, чем запись без байтов.
+                log.error("Неизвестен исход фиксации транзакции, физический файл {} оставлен на диске", publishedFile, ex);
+            } else {
+                // Callback упал до фиксации: TransactionTemplate откатил новую транзакцию (upload/copy идут вне внешней
+                // транзакции), а файл создан этой операцией через publishExclusively.
+                deleteIfExists(publishedFile);
+            }
+            throw ex;
         }
     }
 
@@ -376,9 +405,9 @@ public class FileItemService {
                                                    String checksum,
                                                    long size,
                                                    String detectedMimeType,
-                                                   FileType fileType) {
-        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
-        return transactionTemplate.execute(status -> {
+                                                   FileType fileType,
+                                                   Path publishedFile) {
+        return saveForPublishedFile(publishedFile, () -> {
             StoredObject storedObject = storedObjectRepository.save(StoredObject.builder()
                     .user(user)
                     .filePath(filePath)
@@ -426,9 +455,9 @@ public class FileItemService {
                                                          StoredObject sourceStoredObject,
                                                          String originalName,
                                                          String filePath,
-                                                         String filename) {
-        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
-        return transactionTemplate.execute(status -> {
+                                                         String filename,
+                                                         Path publishedFile) {
+        return saveForPublishedFile(publishedFile, () -> {
             StoredObject copiedStoredObject = storedObjectRepository.save(StoredObject.builder()
                     .user(user)
                     .filePath(filePath)
