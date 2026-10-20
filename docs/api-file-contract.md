@@ -233,9 +233,12 @@ Request:
 - даже при одинаковом checksum создается новый `StoredObject`;
 - copy подчиняется правилу `user + folder + checksum`: если в target folder уже есть `FileItem` с таким checksum, возвращается `409 CONFLICT` и дубль не создается. Это значит, что copy в исходную папку (тот же checksum) всегда конфликтует — для копии нужен `targetFolderId` другой папки;
 - metadata копируется из исходного `FileItem`;
-- физический файл копируется в object storage.
+- физический файл копируется под новым именем в каталог исходного `StoredObject` (`{userId}/camera/{YYYY}` или `{userId}/files`) независимо от target folder;
+- копировать можно только `StoredObject` текущего пользователя: если исходный `FileItem` ссылается на чужой `StoredObject`, возвращается `403 FORBIDDEN` до операций с файлами.
 
 Response `200 OK`: новый `FileItemDto`.
+
+Ошибки: `403 FORBIDDEN` — чужой `StoredObject`; `404` — нет исходного файла или target folder; `409 CONFLICT` — конфликт имени или checksum в target folder.
 
 ### `DELETE /api/v1/files/{id}`
 

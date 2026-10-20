@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
+import ru.tbcarus.photocloudserver.exception.FileAccessDeniedException;
 import ru.tbcarus.photocloudserver.exception.FileConflictException;
 import ru.tbcarus.photocloudserver.exception.FileItemNotFoundException;
 import ru.tbcarus.photocloudserver.model.FileItem;
@@ -109,7 +110,8 @@ public class FileItemService {
             // Имя проверяем только для действительно новой загрузки в папку.
             ensureFileNameAvailable(user.getId(), folder, originalName, null);
 
-            String filePath = storageKeyGenerator.generateFilePath(user.getId(), checksum);
+            // Физический каталог: CAMERA → год съёмки, остальные папки → files.
+            String filePath = storageKeyGenerator.generateFilePath(user.getId(), folder.getFolderType(), capturedAt);
             String filename = storageKeyGenerator.generateFilename(originalName, detectedMimeType);
             String fileExtension = filenameSanitizer.extension(originalName, detectedMimeType);
             finalFile = storagePathResolver.resolve(filePath, filename);
@@ -224,6 +226,11 @@ public class FileItemService {
     public FileItemDto copyFileForCurrentUser(Long fileId, CopyFileRequest request, User user) throws IOException {
         FileItem sourceFile = getFileForCurrentUser(fileId, user);
         StoredObject sourceStoredObject = sourceFile.getStoredObject();
+        // Копия кладётся в каталог источника, а он лежит под userId владельца байтов: чужой StoredObject не копируем.
+        // TODO: копирование расшаренных объектов между пользователями — вместе с sharing.
+        if (!sourceStoredObject.getUser().getId().equals(user.getId())) {
+            throw new FileAccessDeniedException("Copying a file stored by another user is not allowed");
+        }
         Folder targetFolder = request.targetFolderId() == null
                 ? sourceFile.getFolder()
                 : folderService.getFolderForUser(request.targetFolderId(), user);
@@ -236,7 +243,9 @@ public class FileItemService {
         ensureChecksumAvailableInFolder(user.getId(), targetFolder, sourceStoredObject.getChecksum());
 
         Path sourcePath = storagePathResolver.resolve(sourceStoredObject.getFilePath(), sourceStoredObject.getFilename());
-        String filePath = storageKeyGenerator.generateFilePath(user.getId(), sourceStoredObject.getChecksum());
+        // Копия остаётся в физическом каталоге источника (camera/YYYY или files) независимо от целевой папки:
+        // категория и год байтов не зависят от логических перемещений.
+        String filePath = sourceStoredObject.getFilePath();
         String filename = storageKeyGenerator.generateFilename(originalName, sourceStoredObject.getDetectedMimeType());
         Path copiedPath = storagePathResolver.resolve(filePath, filename);
         boolean copied = false;

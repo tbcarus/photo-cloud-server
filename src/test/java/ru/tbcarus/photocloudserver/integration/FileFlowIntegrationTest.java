@@ -916,6 +916,175 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void cameraUploadWithoutFolderIdUsesExifYearDirectory() throws Exception {
+        User user = createUser("user1@test.local", PASSWORD);
+        String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
+        byte[] jpeg = ExifJpegFixture.jpegWithExifTags(Map.of(ExifJpegFixture.DATE_TIME_ORIGINAL, "2023:12:31 23:30:15"));
+
+        FileItemDto uploaded = upload(token, "IMG_20231231_233015.jpg", "image/jpeg", jpeg);
+
+        FileItem fileItem = findFileItem(uploaded.getId());
+        assertThat(fileItem.getFolder().getFolderType()).isEqualTo(FolderType.CAMERA);
+        assertThat(fileItem.getStoredObject().getFilePath()).isEqualTo(user.getId() + "/camera/2023");
+        assertThat(Files.readAllBytes(storedObjectPath(fileItem.getStoredObject()))).isEqualTo(jpeg);
+    }
+
+    @Test
+    void explicitCameraUploadWithoutExifDateUsesUploadYearDirectory() throws Exception {
+        User user = createUser("user1@test.local", PASSWORD);
+        String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
+        // Первая загрузка лениво создаёт CAMERA, вторая адресует её явно через folderId.
+        FileItemDto seed = upload(token, "seed.jpg", "image/jpeg",
+                ExifJpegFixture.jpegWithExifTags(Map.of(ExifJpegFixture.DATE_TIME_ORIGINAL, "2020:05:05 10:00:00")));
+
+        FileItemDto uploaded = upload(token, "no-date.jpg", "image/jpeg", ExifJpegFixture.jpegWithExifTags(Map.of()),
+                seed.getFolderId());
+
+        FileItem fileItem = findFileItem(uploaded.getId());
+        assertThat(fileItem.getFolder().getFolderType()).isEqualTo(FolderType.CAMERA);
+        assertThat(uploaded.getCapturedAt()).isEqualTo(uploaded.getUploadedAt());
+        assertThat(fileItem.getStoredObject().getFilePath())
+                .isEqualTo(user.getId() + "/camera/" + uploaded.getUploadedAt().getYear());
+        assertThat(Files.exists(storedObjectPath(fileItem.getStoredObject()))).isTrue();
+    }
+
+    @Test
+    void filesAndUserFolderUploadsUseFilesDirectory() throws Exception {
+        User user = createUser("user1@test.local", PASSWORD);
+        String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
+        Long userFolderId = createFolder(token, getRootId(token), "Trips").get("id").asLong();
+        byte[] jpeg = ExifJpegFixture.jpegWithExifTags(Map.of(ExifJpegFixture.DATE_TIME_ORIGINAL, "2023:12:31 23:30:15"));
+
+        FileItem document = findFileItem(upload(token, "notes.txt", "text/plain", "notes".getBytes()).getId());
+        FileItem photo = findFileItem(upload(token, "photo.jpg", "image/jpeg", jpeg, userFolderId).getId());
+
+        assertThat(document.getFolder().getFolderType()).isEqualTo(FolderType.FILES);
+        assertThat(photo.getFolder().getFolderType()).isEqualTo(FolderType.USER);
+        // Каталог определяется целевой папкой, а не типом файла: фото с EXIF вне CAMERA тоже попадает в files.
+        assertThat(document.getStoredObject().getFilePath()).isEqualTo(user.getId() + "/files");
+        assertThat(photo.getStoredObject().getFilePath()).isEqualTo(user.getId() + "/files");
+        assertThat(Files.exists(storedObjectPath(document.getStoredObject()))).isTrue();
+        assertThat(Files.readAllBytes(storedObjectPath(photo.getStoredObject()))).isEqualTo(jpeg);
+    }
+
+    @Test
+    void dedupStaysPerFolderAcrossCameraAndFilesDirectories() throws Exception {
+        User user = createUser("user1@test.local", PASSWORD);
+        String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
+        Long userFolderId = createFolder(token, getRootId(token), "Trips").get("id").asLong();
+        byte[] jpeg = ExifJpegFixture.jpegWithExifTags(Map.of(ExifJpegFixture.DATE_TIME_ORIGINAL, "2023:12:31 23:30:15"));
+
+        FileItemDto first = upload(token, "IMG_1.jpg", "image/jpeg", jpeg);
+        FileItemDto repeated = upload(token, "IMG_1.jpg", "image/jpeg", jpeg);
+        FileItemDto otherFolder = upload(token, "IMG_1.jpg", "image/jpeg", jpeg, userFolderId);
+
+        assertThat(repeated.getId()).isEqualTo(first.getId());
+        assertThat(otherFolder.getId()).isNotEqualTo(first.getId());
+        assertThat(findFileItem(first.getId()).getStoredObject().getFilePath()).isEqualTo(user.getId() + "/camera/2023");
+        assertThat(findFileItem(otherFolder.getId()).getStoredObject().getFilePath()).isEqualTo(user.getId() + "/files");
+        assertThat(storedObjectRepository.findAll()).hasSize(2);
+        assertThat(storageFileCount()).isEqualTo(2);
+    }
+
+    @Test
+    void copyOfCameraFileKeepsSourceDirectoryAfterMoveAndCreatesSeparateBytes() throws Exception {
+        User user = createUser("user1@test.local", PASSWORD);
+        String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
+        Long rootId = getRootId(token);
+        Long movedToId = createFolder(token, rootId, "Moved").get("id").asLong();
+        Long copyTargetId = createFolder(token, rootId, "CopyTarget").get("id").asLong();
+        byte[] jpeg = ExifJpegFixture.jpegWithExifTags(Map.of(ExifJpegFixture.DATE_TIME_ORIGINAL, "2023:12:31 23:30:15"));
+        FileItemDto source = upload(token, "IMG_1.jpg", "image/jpeg", jpeg);
+
+        // Логический move в USER-папку не меняет физический каталог источника.
+        perform(post("/api/v1/files/{id}/move", source.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"targetFolderId":%d}
+                                """.formatted(movedToId)))
+                .andExpect(status().isOk());
+        long storageFilesBeforeCopy = storageFileCount();
+
+        FileItemDto copied = copy(token, source.getId(), copyTargetId);
+
+        FileItem sourceItem = findFileItem(source.getId());
+        FileItem copiedItem = findFileItem(copied.getId());
+        assertThat(sourceItem.getStoredObject().getFilePath()).isEqualTo(user.getId() + "/camera/2023");
+        assertThat(copiedItem.getFolder().getId()).isEqualTo(copyTargetId);
+        assertThat(copiedItem.getStoredObject().getId()).isNotEqualTo(sourceItem.getStoredObject().getId());
+        assertThat(copiedItem.getStoredObject().getFilePath()).isEqualTo(sourceItem.getStoredObject().getFilePath());
+        assertThat(copiedItem.getStoredObject().getFilename()).isNotEqualTo(sourceItem.getStoredObject().getFilename());
+        assertThat(Files.readAllBytes(storedObjectPath(copiedItem.getStoredObject()))).isEqualTo(jpeg);
+        assertThat(storageFileCount()).isEqualTo(storageFilesBeforeCopy + 1);
+
+        // Байты копии независимы: удаление копии не затрагивает источник, его download работает.
+        perform(delete("/api/v1/files/{id}", copied.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isNoContent());
+        assertThat(Files.exists(storedObjectPath(copiedItem.getStoredObject()))).isFalse();
+        perform(get("/api/v1/files/{id}/download", source.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes(jpeg));
+    }
+
+    @Test
+    void copyOfFilesFileKeepsFilesDirectoryAndCreatesSeparateBytes() throws Exception {
+        User user = createUser("user1@test.local", PASSWORD);
+        String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
+        Long copyTargetId = createFolder(token, getRootId(token), "CopyTarget").get("id").asLong();
+        FileItemDto source = upload(token, "notes.txt", "text/plain", "notes".getBytes());
+
+        FileItemDto copied = copy(token, source.getId(), copyTargetId);
+
+        FileItem sourceItem = findFileItem(source.getId());
+        FileItem copiedItem = findFileItem(copied.getId());
+        assertThat(copiedItem.getStoredObject().getId()).isNotEqualTo(sourceItem.getStoredObject().getId());
+        assertThat(copiedItem.getStoredObject().getFilePath()).isEqualTo(user.getId() + "/files");
+        assertThat(copiedItem.getStoredObject().getFilename()).isNotEqualTo(sourceItem.getStoredObject().getFilename());
+        assertThat(Files.readAllBytes(storedObjectPath(copiedItem.getStoredObject()))).isEqualTo("notes".getBytes());
+        assertThat(Files.exists(storedObjectPath(sourceItem.getStoredObject()))).isTrue();
+    }
+
+    @Test
+    void copyOfStoredObjectOwnedByAnotherUserIsForbiddenWithoutCreatingFiles() throws Exception {
+        User owner = createUser("owner@test.local", PASSWORD);
+        User other = createUser("other@test.local", PASSWORD);
+        String ownerToken = loginAndGetAccessToken(owner.getEmail(), PASSWORD);
+        String otherToken = loginAndGetAccessToken(other.getEmail(), PASSWORD);
+        FileItem ownerItem = findFileItem(upload(ownerToken, "owner.jpg", "image/jpeg", "owner-bytes".getBytes()).getId());
+        FileItem otherSeedItem = findFileItem(upload(otherToken, "seed.jpg", "image/jpeg", "seed-bytes".getBytes()).getId());
+        // API таких ссылок не создаёт, но модель допускает FileItem пользователя на чужой StoredObject.
+        FileItem otherLogicalItem = fileItemRepository.save(FileItem.builder()
+                .user(other)
+                .folder(otherSeedItem.getFolder())
+                .storedObject(ownerItem.getStoredObject())
+                .checksum(ownerItem.getStoredObject().getChecksum())
+                .originalName("other-logical.jpg")
+                .capturedAt(LocalDateTime.now())
+                .uploadedAt(LocalDateTime.now())
+                .build());
+        Long copyTargetId = createFolder(otherToken, getRootId(otherToken), "CopyTarget").get("id").asLong();
+        long storageFilesBefore = storageFileCount();
+        long storedObjectsBefore = storedObjectRepository.count();
+        long fileItemsBefore = fileItemRepository.count();
+
+        perform(post("/api/v1/files/{id}/copy", otherLogicalItem.getId())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(otherToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"targetFolderId":%d}
+                                """.formatted(copyTargetId)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+
+        assertThat(storageFileCount()).isEqualTo(storageFilesBefore);
+        assertThat(storedObjectRepository.count()).isEqualTo(storedObjectsBefore);
+        assertThat(fileItemRepository.count()).isEqualTo(fileItemsBefore);
+    }
+
+    @Test
     void capturedAtFallsBackToUploadedAtForImageWithoutUsableExifDate() throws Exception {
         createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
@@ -958,6 +1127,18 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
+        return objectMapper.readValue(result.getResponse().getContentAsString(), FileItemDto.class);
+    }
+
+    private FileItemDto copy(String accessToken, Long fileId, Long targetFolderId) throws Exception {
+        MvcResult result = perform(post("/api/v1/files/{id}/copy", fileId)
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(accessToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"targetFolderId":%d}
+                                """.formatted(targetFolderId)))
+                .andExpect(status().isOk())
+                .andReturn();
         return objectMapper.readValue(result.getResponse().getContentAsString(), FileItemDto.class);
     }
 

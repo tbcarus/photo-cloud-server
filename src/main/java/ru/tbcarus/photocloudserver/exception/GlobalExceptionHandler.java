@@ -122,6 +122,12 @@ public class GlobalExceptionHandler {
                 .body(error(ErrorCode.FILE_TOO_LARGE, e.getMessage()));
     }
 
+    @ExceptionHandler(FileAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleFileAccessDenied(FileAccessDeniedException e) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(error(ErrorCode.FORBIDDEN, e.getMessage()));
+    }
+
     @ExceptionHandler(FileConflictException.class)
     public ResponseEntity<ErrorResponse> handleFileConflict(FileConflictException e) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
