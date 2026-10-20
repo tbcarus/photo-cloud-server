@@ -1,5 +1,6 @@
 package ru.tbcarus.photocloudserver.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
@@ -33,6 +34,7 @@ import ru.tbcarus.photocloudserver.service.metadata.ExtractedFileMetadata;
 import ru.tbcarus.photocloudserver.service.metadata.FileMetadataExtractor;
 import ru.tbcarus.photocloudserver.service.storage.FileContentDetector;
 import ru.tbcarus.photocloudserver.service.storage.FilenameSanitizer;
+import ru.tbcarus.photocloudserver.service.storage.OwnerMarker;
 import ru.tbcarus.photocloudserver.service.storage.StorageKeyGenerator;
 import ru.tbcarus.photocloudserver.service.storage.StoragePathResolver;
 import ru.tbcarus.photocloudserver.service.storage.StorageProperties;
@@ -43,6 +45,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigDecimal;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -68,6 +71,7 @@ public class FileItemService {
     private final StorageProperties storageProperties;
     private final FileMetadataExtractor fileMetadataExtractor;
     private final PlatformTransactionManager transactionManager;
+    private final ObjectMapper objectMapper;
 
     public FileItemDto uploadFile(MultipartFile file, User user) throws IOException {
         return uploadFile(file, user, null);
@@ -119,6 +123,7 @@ public class FileItemService {
             // Публикуем до БД: если файловая операция не удалась, в базе не появится ссылка на отсутствующий файл.
             publishExclusively(tempFile, finalFile);
             tempFile = null;
+            ensureOwnerMarker(user);
 
             FileItem saved;
             try {
@@ -252,6 +257,7 @@ public class FileItemService {
             }
             publishExclusively(tempFile, copiedPath);
             tempFile = null;
+            ensureOwnerMarker(user);
 
             // Copy намеренно не использует dedup: пользователь получает независимый физический объект.
             FileItem saved = createCopiedStoredObjectAndFileItem(
@@ -368,6 +374,33 @@ public class FileItemService {
             // Перенос не состоялся: под конечным именем всё ещё наша заглушка.
             deleteIfExists(finalFile);
             throw ex;
+        }
+    }
+
+    // Маркер владельца в корне каталога пользователя создаётся при первой физической записи и не перезаписывается.
+    // Это справка для администратора: любая ошибка только логируется и не прерывает upload/copy.
+    private void ensureOwnerMarker(User user) {
+        Path tempFile = null;
+        try {
+            Path markerFile = storagePathResolver.resolveDirectChild(
+                    storageKeyGenerator.generateUserRootPath(user.getId()),
+                    filenameSanitizer.ownerMarkerFilename(user.getEmail()));
+            if (Files.exists(markerFile)) {
+                return;
+            }
+            tempFile = createTempFile();
+            objectMapper.writeValue(tempFile.toFile(),
+                    new OwnerMarker(user.getId(), user.getEmail(), user.getCreatedAt(), LocalDateTime.now()));
+            publishExclusively(tempFile, markerFile);
+            tempFile = null;
+        } catch (FileAlreadyExistsException ex) {
+            // Параллельная операция успела создать маркер первой — повторно не пишем.
+        } catch (IOException | RuntimeException ex) {
+            log.warn("Не удалось создать маркер владельца для пользователя {}", user.getId(), ex);
+        } finally {
+            if (tempFile != null) {
+                deleteIfExists(tempFile);
+            }
         }
     }
 

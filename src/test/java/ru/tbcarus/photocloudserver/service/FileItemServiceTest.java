@@ -1,5 +1,8 @@
 package ru.tbcarus.photocloudserver.service;
 
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -7,6 +10,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -22,6 +26,7 @@ import ru.tbcarus.photocloudserver.service.metadata.ExtractedFileMetadata;
 import ru.tbcarus.photocloudserver.service.metadata.FileMetadataExtractor;
 import ru.tbcarus.photocloudserver.service.storage.*;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
@@ -99,7 +104,8 @@ class FileItemServiceTest {
 
         // Откат достоверен: удалён только собственный файл, соседний чужой файл на месте.
         assertThat(Files.readString(neighbourFile)).isEqualTo("neighbour");
-        assertThat(regularFileCount()).isEqualTo(1);
+        assertThat(filesIn("1/files")).isEqualTo(1);
+        assertThat(tempFileCount()).isZero();
     }
 
     @Test
@@ -142,7 +148,7 @@ class FileItemServiceTest {
         assertThat(response.getId()).isEqualTo(42L);
         assertThat(response.getOriginalFilename()).isEqualTo("note.txt");
         assertThat(Files.readString(winnerFile)).isEqualTo("content");
-        assertThat(regularFileCount()).isEqualTo(1);
+        assertThat(filesIn("1/files")).isEqualTo(1);
     }
 
     @Test
@@ -251,7 +257,49 @@ class FileItemServiceTest {
         verifyNoInteractions(storedObjectRepository);
     }
 
+    @Test
+    void uploadCreatesOwnerMarkerInsideUserDirectoryEvenForTraversalEmail() throws Exception {
+        // @Email допускает такой адрес в кавычках; сырое имя увело бы маркер в каталог пользователя 5.
+        User user = User.builder().id(1L).email("\"/../../5/x\"@d.ru")
+                .createdAt(LocalDateTime.of(2026, 1, 2, 3, 4, 5)).build();
+        mockSuccessfulUploadPersistence(user);
+
+        fileItemService.uploadFile(new MockMultipartFile("file", "note.txt", "text/plain", "content".getBytes()), user);
+
+        Path marker = storageRoot.resolve("1").resolve(filenameSanitizer.ownerMarkerFilename(user.getEmail()));
+        assertThat(marker.getParent()).isEqualTo(storageRoot.resolve("1"));
+        JsonNode json = new ObjectMapper().readTree(marker.toFile());
+        assertThat(json.get("userId").asLong()).isEqualTo(1L);
+        assertThat(json.get("email").asText()).isEqualTo(user.getEmail());
+        assertThat(json.get("userCreatedAt").asText()).isEqualTo("2026-01-02T03:04:05");
+        assertThat(Files.exists(storageRoot.resolve("5"))).isFalse();
+        assertThat(filesIn("1")).isEqualTo(1);
+    }
+
+    @Test
+    void ownerMarkerFailureDoesNotFailUploadAndRemovesTemp() throws Exception {
+        User user = user();
+        ObjectMapper failingMapper = mock(ObjectMapper.class);
+        doThrow(new JsonMappingException(null, "json failed")).when(failingMapper).writeValue(any(File.class), any());
+        FileItemService service = newService(
+                new StorageKeyGenerator(filenameSanitizer, storageProperties), new FileItemMapperImpl(), failingMapper);
+        mockSuccessfulUploadPersistence(user);
+
+        var response = service.uploadFile(new MockMultipartFile("file", "note.txt", "text/plain", "content".getBytes()), user);
+
+        assertThat(response.getOriginalFilename()).isEqualTo("note.txt");
+        assertThat(filesIn("1/files")).isEqualTo(1);
+        assertThat(filesIn("1")).isZero();
+        assertThat(tempFileCount()).isZero();
+    }
+
     private FileItemService newService(StorageKeyGenerator storageKeyGenerator, FileItemMapper fileItemMapper) {
+        return newService(storageKeyGenerator, fileItemMapper, Jackson2ObjectMapperBuilder.json().build());
+    }
+
+    private FileItemService newService(StorageKeyGenerator storageKeyGenerator,
+                                       FileItemMapper fileItemMapper,
+                                       ObjectMapper objectMapper) {
         return new FileItemService(
                 fileItemRepository,
                 storedObjectRepository,
@@ -263,7 +311,8 @@ class FileItemServiceTest {
                 new FileContentDetector(),
                 storageProperties,
                 fileMetadataExtractor,
-                transactionManager
+                transactionManager,
+                objectMapper
         );
     }
 

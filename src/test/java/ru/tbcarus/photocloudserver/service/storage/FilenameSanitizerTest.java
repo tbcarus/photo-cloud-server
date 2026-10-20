@@ -5,6 +5,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.Locale;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -173,6 +174,46 @@ class FilenameSanitizerTest {
         assertThat(utf8Length(physical)).isLessThanOrEqualTo(MAX_COMPONENT_BYTES);
         assertThat(hasUnpairedSurrogate(physical)).isFalse();
         assertThat(physical).doesNotContainPattern("[<>:\"/\\\\|?*\\p{Cntrl}]");
+    }
+
+    @Test
+    void ownerMarkerFilenameKeepsRegularEmail() {
+        assertThat(sanitizer.ownerMarkerFilename("user@example.com")).isEqualTo("user@example.com.json");
+    }
+
+    @Test
+    void ownerMarkerFilenameReplacesCharactersInvalidOnFileSystems() {
+        // Такие символы @Email допускает в локальной части без кавычек или в кавычках.
+        assertThat(sanitizer.ownerMarkerFilename("a/b\\c|d?e*f<g>h:i\"j@x.ru")).isEqualTo("a_b_c_d_e_f_g_h_i_j@x.ru.json");
+    }
+
+    @Test
+    void ownerMarkerFilenameCannotEscapeUserDirectory() {
+        String name = sanitizer.ownerMarkerFilename("\"/../../5/x\"@d.ru");
+
+        assertThat(name).isEqualTo("__.._.._5_x_@d.ru.json");
+        assertThat(Path.of(name).getNameCount()).isEqualTo(1);
+        assertThat(Path.of("7").resolve(name).normalize().getParent()).isEqualTo(Path.of("7"));
+    }
+
+    @Test
+    void ownerMarkerFilenameNormalizesUnicode() {
+        // "й" в NFD и одиночный суррогат.
+        assertThat(sanitizer.ownerMarkerFilename("й@пример.рф"))
+                .isEqualTo("й@пример.рф.json");
+        assertThat(sanitizer.ownerMarkerFilename("a\uD83D@x.ru")).isEqualTo("a_@x.ru.json");
+    }
+
+    @Test
+    void longOwnerMarkerFilenameFitsByteLimitAndKeepsJsonSuffix() {
+        // Адрес на пределе БД (128 символов) из кириллицы занимает 254 байта, вместе с ".json" — больше лимита.
+        String email = "я".repeat(64) + "@" + "д".repeat(60) + ".рф";
+
+        String name = sanitizer.ownerMarkerFilename(email);
+
+        assertThat(name).startsWith("я".repeat(64) + "@").endsWith(".json");
+        assertThat(utf8Length(name)).isLessThanOrEqualTo(MAX_COMPONENT_BYTES);
+        assertThat(hasUnpairedSurrogate(name)).isFalse();
     }
 
     private String build(String originalName, String mimeType) {

@@ -18,11 +18,17 @@ public class StorageKeyGenerator {
     // Каталог определяется один раз при создании StoredObject и потом не меняется: move/rename логические.
     // Раскладка files/ временная — окончательная организация ручной библиотеки ещё не выбрана.
     public String generateFilePath(Long userId, FolderType targetFolderType, LocalDateTime capturedAt) {
+        String userRootPath = generateUserRootPath(userId);
         if (targetFolderType == FolderType.CAMERA) {
-            // Locale.ROOT: в части локалей %d выводит не ASCII-цифры.
-            return String.format(Locale.ROOT, "%d/camera/%04d", userId, capturedAt.getYear());
+            return String.format(Locale.ROOT, "%s/camera/%04d", userRootPath, capturedAt.getYear());
         }
-        return String.format(Locale.ROOT, "%d/files", userId);
+        return userRootPath + "/files";
+    }
+
+    // Корневой каталог пользователя: в нём лежат camera/, files/ и маркер владельца.
+    public String generateUserRootPath(Long userId) {
+        // Locale.ROOT: в части локалей %d выводит не ASCII-цифры.
+        return String.format(Locale.ROOT, "%d", userId);
     }
 
     public String generateFilename(String originalFilename, String mimeType) {

@@ -62,6 +62,14 @@ public class FilenameSanitizer {
         return escapeWindowsReservedStem(originalPart) + suffix;
     }
 
+    // Имя маркера владельца {safeEmail}.json. Сырой email нельзя делать именем: @Email допускает "/", а в кавычках — и "..".
+    public String ownerMarkerFilename(String email) {
+        String suffix = ".json";
+        // У email из БД часть до первой точки содержит "@" и не совпадёт с именем устройства Windows;
+        // окончание ".json" исключает точку или пробел в конце имени.
+        return truncate(physicalSafeName(email), Integer.MAX_VALUE, MAX_COMPONENT_BYTES - utf8Length(suffix)) + suffix;
+    }
+
     private String physicalSafeName(String originalFilename) {
         String filename = originalFilename == null ? "" : originalFilename;
         // Regex идёт по code points: корректная суррогатная пара — один символ, \p{Cs} находит только одиночные суррогаты,

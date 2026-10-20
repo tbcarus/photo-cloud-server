@@ -202,6 +202,7 @@ public abstract class AbstractIntegrationTest {
         return TEST_STORAGE.resolve(storedObject.getFilePath()).resolve(storedObject.getFilename()).normalize();
     }
 
+    // Считает только файлы данных: temp и маркеры владельца в корне {userId} не учитываются.
     protected long storageFileCount() throws IOException {
         if (!Files.exists(TEST_STORAGE)) {
             return 0;
@@ -210,8 +211,18 @@ public abstract class AbstractIntegrationTest {
             Path tempDir = TEST_STORAGE.resolve("tmp");
             return stream.filter(Files::isRegularFile)
                     .filter(path -> !path.startsWith(tempDir))
+                    .filter(path -> !isOwnerMarker(path))
                     .count();
         }
+    }
+
+    protected Path ownerMarkerPath(User user) {
+        return TEST_STORAGE.resolve(user.getId().toString()).resolve(user.getEmail() + ".json");
+    }
+
+    private boolean isOwnerMarker(Path path) {
+        // Данные лежат минимум на уровень глубже: {userId}/files/... или {userId}/camera/{YYYY}/...
+        return TEST_STORAGE.relativize(path).getNameCount() == 2 && path.getFileName().toString().endsWith(".json");
     }
 
     protected long tempFileCount() throws IOException {

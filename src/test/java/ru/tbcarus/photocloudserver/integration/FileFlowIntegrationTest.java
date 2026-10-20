@@ -1085,6 +1085,66 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void firstUploadCreatesOwnerMarkerWithExactlyFourFields() throws Exception {
+        User user = createUser("marker@test.local", PASSWORD);
+        String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
+        LocalDateTime before = LocalDateTime.now();
+
+        upload(token, "notes.txt", "text/plain", "notes".getBytes());
+
+        JsonNode marker = objectMapper.readTree(ownerMarkerPath(user).toFile());
+        List<String> fields = new ArrayList<>();
+        marker.fieldNames().forEachRemaining(fields::add);
+        assertThat(fields).containsExactly("userId", "email", "userCreatedAt", "markerCreatedAt");
+        assertThat(marker.get("userId").asLong()).isEqualTo(user.getId());
+        assertThat(marker.get("email").asText()).isEqualTo(user.getEmail());
+        assertThat(LocalDateTime.parse(marker.get("userCreatedAt").asText()))
+                .isEqualTo(userRepository.findById(user.getId()).orElseThrow().getCreatedAt());
+        assertThat(LocalDateTime.parse(marker.get("markerCreatedAt").asText())).isBetween(before, LocalDateTime.now());
+    }
+
+    @Test
+    void repeatedUploadKeepsExistingOwnerMarker() throws Exception {
+        User user = createUser("marker@test.local", PASSWORD);
+        String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
+        upload(token, "first.txt", "text/plain", "first".getBytes());
+        byte[] markerBefore = Files.readAllBytes(ownerMarkerPath(user));
+
+        upload(token, "second.txt", "text/plain", "second".getBytes());
+
+        // Тот же markerCreatedAt: маркер не переписывается.
+        assertThat(Files.readAllBytes(ownerMarkerPath(user))).isEqualTo(markerBefore);
+    }
+
+    @Test
+    void copyCreatesMissingOwnerMarker() throws Exception {
+        User user = createUser("marker@test.local", PASSWORD);
+        String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
+        FileItemDto source = upload(token, "notes.txt", "text/plain", "notes".getBytes());
+        Long copyTargetId = createFolder(token, getRootId(token), "CopyTarget").get("id").asLong();
+        // Каталог с данными без маркера — как у пользователя, загружавшего файлы до появления маркера.
+        Files.delete(ownerMarkerPath(user));
+
+        copy(token, source.getId(), copyTargetId);
+
+        assertThat(objectMapper.readTree(ownerMarkerPath(user).toFile()).get("userId").asLong()).isEqualTo(user.getId());
+    }
+
+    @Test
+    void existingFileAtOwnerMarkerPathIsNotOverwritten() throws Exception {
+        User user = createUser("marker@test.local", PASSWORD);
+        String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
+        Path marker = ownerMarkerPath(user);
+        Files.createDirectories(marker.getParent());
+        Files.writeString(marker, "foreign");
+
+        FileItemDto uploaded = upload(token, "notes.txt", "text/plain", "notes".getBytes());
+
+        assertThat(uploaded.getId()).isPositive();
+        assertThat(Files.readString(marker)).isEqualTo("foreign");
+    }
+
+    @Test
     void capturedAtFallsBackToUploadedAtForImageWithoutUsableExifDate() throws Exception {
         createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken("user1@test.local", PASSWORD);

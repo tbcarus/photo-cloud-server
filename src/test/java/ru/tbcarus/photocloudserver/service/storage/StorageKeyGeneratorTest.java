@@ -36,6 +36,11 @@ class StorageKeyGeneratorTest {
     }
 
     @Test
+    void userRootPathIsUserIdDirectory() {
+        assertThat(generator.generateUserRootPath(7L)).isEqualTo("7");
+    }
+
+    @Test
     void pathDigitsDoNotDependOnDefaultLocale() {
         Locale defaultLocale = Locale.getDefault();
         try {
@@ -45,6 +50,7 @@ class StorageKeyGeneratorTest {
                     .isEqualTo("7/camera/2023");
             assertThat(generator.generateFilePath(7L, FolderType.FILES, LocalDateTime.of(2023, 1, 1, 0, 0)))
                     .isEqualTo("7/files");
+            assertThat(generator.generateUserRootPath(7L)).isEqualTo("7");
         } finally {
             Locale.setDefault(defaultLocale);
         }
