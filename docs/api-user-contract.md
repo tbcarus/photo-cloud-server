@@ -22,7 +22,7 @@
 
 Все остальные endpoint-ы требуют `Authorization: Bearer <accessToken>`.
 
-Access token живет 20 минут. Refresh token живет 7 дней, хранится в БД и может быть отозван.
+Сроки задаются конфигурацией: `token.access-ttl-minutes` (по умолчанию 1440 — 24 часа), `token.refresh-ttl-days` (180) и `token.refresh-rotation-threshold-days` (30) — порог замены refresh token. Refresh token хранится в БД и может быть отозван.
 
 ## Ошибки
 
@@ -44,7 +44,7 @@ Access token живет 20 минут. Refresh token живет 7 дней, хр
 | Status | Когда |
 | --- | --- |
 | 400 | validation error, malformed body, missing query param, неверный/использованный/истекший email-code (для `register/confirm` — HTML-страница, см. ниже) |
-| 401 | неверный login/password, disabled/banned user, invalid refresh token, нет или невалидный access token |
+| 401 | неверный login/password, disabled/banned user (в том числе при refresh), invalid refresh token, нет или невалидный access token, refresh token вместо access |
 | 403 | refresh token отозван или принадлежит другому пользователю |
 | 404 | refresh token не найден в logout/logout-others |
 | 409 | register: аккаунт с этим email уже активирован |
@@ -187,7 +187,11 @@ Response `200 OK`:
 
 ### `POST /api/v1/auth/refresh-token`
 
-Публичный endpoint. Принимает refresh token, ищет его в БД, проверяет тип `REFRESH`, срок действия, subject и флаг `revoked`. Возвращает только новый access token.
+Публичный endpoint. Принимает refresh token, ищет его в БД, проверяет флаг `revoked`, подпись, тип `REFRESH`, срок действия, subject, затем `enabled` и `banned` пользователя.
+
+Если до истечения refresh token остаётся больше `refresh-rotation-threshold-days`, возвращает только новый access token. Иначе в одной транзакции отзывает предъявленный refresh token (только если он ещё не отозван), создаёт новый со сроком `refresh-ttl-days` и возвращает его вместе с access token. Ошибка сохранения нового токена откатывает отзыв прежнего. Клиент сохраняет `refreshToken`, если поле есть в ответе, иначе оставляет прежний.
+
+TODO: если ответ с новым refresh token потерян, прежний уже отозван, и восстановить сессию можно только повторным login.
 
 Request:
 
@@ -197,11 +201,20 @@ Request:
 }
 ```
 
-Response `200 OK`:
+Response `200 OK` без замены refresh token:
 
 ```json
 {
   "accessToken": "<new-jwt-access-token>"
+}
+```
+
+Response `200 OK` с заменой refresh token:
+
+```json
+{
+  "accessToken": "<new-jwt-access-token>",
+  "refreshToken": "<new-jwt-refresh-token>"
 }
 ```
 
@@ -210,14 +223,15 @@ Response `200 OK`:
 | Status | Когда |
 | --- | --- |
 | 400 | пустой `refreshToken` |
-| 401 | token не найден, malformed, expired, неправильный token type |
-| 403 | token найден, но `revoked=true` |
+| 401 | `INVALID_REFRESH_TOKEN`: token не найден, malformed, expired, неправильный token type (в том числе access), пользователь не найден, `enabled=false` или `banned=true` |
+| 403 | `REFRESH_TOKEN_REVOKED`: token найден, но `revoked=true`, в том числе после замены или параллельной заменой |
+| 500 | `DATABASE_CONSTRAINT_VIOLATION`: новый refresh token не сохранён, прежний остаётся действующим |
 
 ## Logout
 
 ### `POST /api/v1/auth/logout`
 
-Protected endpoint. Отзывает один refresh token, если он принадлежит текущему пользователю.
+Protected endpoint. Отзывает один refresh token, если он принадлежит текущему пользователю. Уже отозванный собственный token, в том числе заменённый при refresh, тоже даёт `200`; токен, выданный ему на замену, нужно отозвать отдельным logout.
 
 Request:
 

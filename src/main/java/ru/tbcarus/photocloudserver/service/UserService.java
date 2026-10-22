@@ -111,7 +111,7 @@ public class UserService implements UserDetailsService {
         RefreshToken tokenDb = jwtService.getRefreshToken(refreshToken);
         String email = tokenDb.getUserName();
         User user = getUserByEmailForRefresh(email);
-        return new RefreshResponse(jwtService.refreshAccessToken(user, tokenDb));
+        return jwtService.refreshTokens(user, tokenDb);
     }
 
     private User getUserByEmailForLogin(String email) {

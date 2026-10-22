@@ -44,6 +44,9 @@ server:
 token:
   signing:
     key: ${JWT_KEY}
+  access-ttl-minutes: 1440
+  refresh-ttl-days: 180
+  refresh-rotation-threshold-days: 30 # refresh заменяется новым, когда до его истечения остаётся не больше порога
 
 storage:
   root: ${STORAGE_ROOT:storage} # корневая папка физического хранения файлов

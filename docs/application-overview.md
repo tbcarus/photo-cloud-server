@@ -150,8 +150,8 @@ Upload pipeline:
 
 Приложение stateless по HTTP-сессиям и использует JWT.
 
-- Access token: JWT с `token_type=ACCESS`, roles и subject=email, срок 20 минут.
-- Refresh token: JWT с `token_type=REFRESH`, хранится в таблице refresh tokens, срок 7 дней.
+- Access token: JWT с `token_type=ACCESS`, roles и subject=email, срок `token.access-ttl-minutes` (по умолчанию 24 часа).
+- Refresh token: JWT с `token_type=REFRESH`, хранится в таблице refresh tokens, срок `token.refresh-ttl-days` (по умолчанию 180 дней). Когда до истечения остаётся не больше `token.refresh-rotation-threshold-days` (30 дней), refresh заменяет его новым.
 - Refresh token можно отозвать через logout/logout-all/logout-others.
 - Защищенные endpoint-ы требуют `Authorization: Bearer <accessToken>`.
 - Публичные endpoint-ы ограничены test, register, login, refresh и password reset flow.

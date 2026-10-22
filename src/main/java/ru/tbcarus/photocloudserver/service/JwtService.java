@@ -5,10 +5,12 @@ import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import ru.tbcarus.photocloudserver.exception.EntityNotFoundException;
 import ru.tbcarus.photocloudserver.exception.InvalidRefreshTokenException;
 import ru.tbcarus.photocloudserver.exception.RefreshTokenNotFoundException;
@@ -17,9 +19,12 @@ import ru.tbcarus.photocloudserver.exception.TokenRevokedException;
 import ru.tbcarus.photocloudserver.model.RefreshToken;
 import ru.tbcarus.photocloudserver.model.TokenType;
 import ru.tbcarus.photocloudserver.model.User;
+import ru.tbcarus.photocloudserver.model.dto.RefreshResponse;
 import ru.tbcarus.photocloudserver.repository.RefreshTokenRepository;
 
 import java.security.Key;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
@@ -34,8 +39,23 @@ public class JwtService {
     @Value("${token.signing.key}")
     private String jwtSigningKey;
 
-    private final long expirationTime = 20 * 60 * 1000;
-    private final long refreshExpirationTime = 7 * 24 * 60 * 60 * 1000;
+    @Value("${token.access-ttl-minutes}")
+    private long accessTtlMinutes;
+    @Value("${token.refresh-ttl-days}")
+    private long refreshTtlDays;
+    @Value("${token.refresh-rotation-threshold-days}")
+    private long refreshRotationThresholdDays;
+
+    @PostConstruct
+    void validateConfig() {
+        if (accessTtlMinutes < 1 || refreshTtlDays < 1 || refreshRotationThresholdDays < 1
+                || refreshRotationThresholdDays >= refreshTtlDays) {
+            throw new IllegalStateException(String.format(
+                    "token.access-ttl-minutes=%d, token.refresh-ttl-days=%d and token.refresh-rotation-threshold-days=%d "
+                            + "must be positive, threshold must be less than refresh TTL",
+                    accessTtlMinutes, refreshTtlDays, refreshRotationThresholdDays));
+        }
+    }
 
     private Map<String, Object> generateClaims(User user) {
         Map<String, Object> claims = new HashMap<>();
@@ -46,11 +66,13 @@ public class JwtService {
     public String generateAccessToken(User user) {
         Map<String, Object> claims = generateClaims(user);
         claims.put(TokenType.TOKEN_TYPE.getValue(), TokenType.ACCESS.getValue());
+        // Срок прибавляется через Duration: в long без переполнения int.
+        Instant now = Instant.now();
         return Jwts.builder()
                 .claims(claims)
                 .subject(user.getUsername())
-                .issuedAt(new Date(System.currentTimeMillis()))
-                .expiration(new Date(System.currentTimeMillis() + expirationTime))
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(now.plus(Duration.ofMinutes(accessTtlMinutes))))
                 .signWith(getSigningKey()).compact();
     }
 
@@ -61,12 +83,13 @@ public class JwtService {
 //        }
         Map<String, Object> claims = generateClaims(user);
         claims.put(TokenType.TOKEN_TYPE.getValue(), TokenType.REFRESH.getValue());
+        Instant now = Instant.now();
         String refreshToken = Jwts.builder()
                 .claims(claims)
                 .id(UUID.randomUUID().toString())
                 .subject(user.getUsername())
-                .issuedAt(new Date(System.currentTimeMillis()))
-                .expiration(new Date(System.currentTimeMillis() + refreshExpirationTime))
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(now.plus(Duration.ofDays(refreshTtlDays))))
                 .signWith(getSigningKey()).compact();
         RefreshToken entityRefreshToken = RefreshToken.builder()
                 .token(refreshToken)
@@ -118,12 +141,31 @@ public class JwtService {
         refreshTokenRepository.saveAll(list);
     }
 
-    public String refreshAccessToken(User user, RefreshToken tokenDb) {
+    /**
+     * Новый access по refresh R1. Если до истечения R1 остаётся не больше порога, R1 в той же транзакции
+     * отзывается и заменяется новым refresh R2: ошибка сохранения R2 откатывает и отзыв R1.
+     */
+    @Transactional
+    public RefreshResponse refreshTokens(User user, RefreshToken tokenDb) {
         if (tokenDb.isRevoked()) {
             throw new TokenRevokedException(tokenDb.getToken(), "token revoked");
         }
-        validateRefreshToken(tokenDb);
-        return generateAccessToken(user);
+        Date expiration = validateRefreshToken(tokenDb);
+        // Тот же окончательный отказ, что и для недействительного refresh: Android очищает пару и ждёт login.
+        if (!user.isEnabled() || user.isBanned()) {
+            throw new InvalidRefreshTokenException();
+        }
+        String accessToken = generateAccessToken(user);
+        Instant rotationStart = expiration.toInstant().minus(Duration.ofDays(refreshRotationThresholdDays));
+        if (Instant.now().isBefore(rotationStart)) {
+            return new RefreshResponse(accessToken, null);
+        }
+        // Условный отзыв: из параллельных refresh одного R1 заменить его может только один.
+        if (refreshTokenRepository.revokeIfActive(tokenDb.getId(), LocalDateTime.now()) != 1) {
+            throw new TokenRevokedException(tokenDb.getToken(), "token revoked");
+        }
+        // TODO: если ответ с R2 не дошёл до клиента, R1 уже отозван и сессия восстанавливается только повторным login.
+        return new RefreshResponse(accessToken, generateRefreshToken(user));
     }
 
     public boolean isTokenValid(String token, UserDetails userDetails) {
@@ -178,7 +220,7 @@ public class JwtService {
         }
     }
 
-    private void validateRefreshToken(RefreshToken tokenDb) {
+    private Date validateRefreshToken(RefreshToken tokenDb) {
         try {
             String token = tokenDb.getToken();
             if (!TokenType.REFRESH.getValue().equals(extractTokenType(token))) {
@@ -190,6 +232,7 @@ public class JwtService {
             if (!extractUserName(token).equals(tokenDb.getUserName())) {
                 throw new InvalidRefreshTokenException();
             }
+            return extractExpiration(token);
         } catch (JwtException | IllegalArgumentException ex) {
             throw new InvalidRefreshTokenException();
         }
