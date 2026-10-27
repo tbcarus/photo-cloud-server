@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -507,6 +508,41 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(content().contentType("image/png"))
                 .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"download.jpg\""))
                 .andExpect(content().bytes(bytes));
+    }
+
+    @Test
+    void explicitUploadAndDownloadKeepEveryByteValue() throws Exception {
+        createUser("bytes@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("bytes@test.local", PASSWORD);
+        // Все значения байта, включая 0x00, CR/LF и 0xFF: multipart и фильтр логирования их не меняют.
+        // Размер — тестовый предел storage.max-file-size-bytes.
+        byte[] bytes = new byte[1024];
+        for (int i = 0; i < bytes.length; i++) {
+            bytes[i] = (byte) i;
+        }
+
+        FileItemDto uploaded = uploadExplicit(token, "all-bytes.bin", bytes);
+        byte[] downloaded = download(token, uploaded.getId());
+
+        assertThat(uploaded.getChecksum()).isEqualTo(sha256(bytes));
+        assertThat(Files.readAllBytes(storedObjectPath(findFileItem(uploaded.getId()).getStoredObject()))).isEqualTo(bytes);
+        assertThat(downloaded).isEqualTo(bytes);
+    }
+
+    @Test
+    void jpegWithGpsKeepsOriginalBytesAndCoordinates() throws Exception {
+        createUser("gps@test.local", PASSWORD);
+        String token = loginAndGetAccessToken("gps@test.local", PASSWORD);
+        byte[] jpeg = ExifJpegFixture.jpegWithGps(55.7558, 37.6173);
+
+        FileItemDto uploaded = uploadExplicit(token, "gps.jpg", jpeg);
+        byte[] downloaded = download(token, uploaded.getId());
+
+        // Server не перекодирует фото: SHA-256 исходного и скачанного файла совпадают, GPS остаётся в байтах.
+        assertThat(uploaded.getChecksum()).isEqualTo(sha256(jpeg));
+        assertThat(sha256(downloaded)).isEqualTo(sha256(jpeg));
+        assertThat(uploaded.getMetadata().getLatitude().doubleValue()).isCloseTo(55.7558, within(1e-6));
+        assertThat(uploaded.getMetadata().getLongitude().doubleValue()).isCloseTo(37.6173, within(1e-6));
     }
 
     @Test
@@ -1237,6 +1273,25 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         body.put("folderId", folderId);
         body.put("checksums", checksums);
         return objectMapper.writeValueAsString(body);
+    }
+
+    // Тот же путь, что у Android: явный POST /files/upload.
+    private FileItemDto uploadExplicit(String token, String filename, byte[] bytes) throws Exception {
+        MvcResult result = perform(multipart("/api/v1/files/upload")
+                        .file(filePart(filename, MediaType.APPLICATION_OCTET_STREAM_VALUE, bytes))
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readValue(result.getResponse().getContentAsString(), FileItemDto.class);
+    }
+
+    private byte[] download(String token, Long id) throws Exception {
+        return perform(get("/api/v1/files/{id}/download", id)
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsByteArray();
     }
 
     private List<String> texts(JsonNode arrayNode) {
