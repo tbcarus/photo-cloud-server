@@ -37,7 +37,7 @@ public interface FileItemRepository extends JpaRepository<FileItem, Long> {
             "FROM FileItem f WHERE f.user.id = :userId")
     List<FileChecksumDto> findAllChecksumsAndOriginalFilenamesByUserId(Long userId);
 
-    // Дубль логического файла определяется как user + folder + checksum; одинаковый checksum в другой папке дублем не считается.
+    // Дубль в Camera определяется как user + folder + checksum; одинаковый checksum в другой папке дублем не считается.
     @EntityGraph(attributePaths = {"folder", "folder.parent", "storedObject", "metadata"})
     Optional<FileItem> findFirstByUserIdAndFolderIdAndChecksumOrderByIdAsc(Long userId, Long folderId, String checksum);
 
@@ -52,7 +52,14 @@ public interface FileItemRepository extends JpaRepository<FileItem, Long> {
 
     boolean existsByFolderId(Long folderId);
 
-    boolean existsByUserIdAndFolderIdAndOriginalNameIgnoreCase(Long userId, Long folderId, String originalName);
-
-    boolean existsByUserIdAndFolderIdAndOriginalNameIgnoreCaseAndIdNot(Long userId, Long folderId, String originalName, Long id);
+    // Только для обычной библиотеки: в Camera имена повторяются. Имена сравнивает одна функция PostgreSQL lower().
+    @EntityGraph(attributePaths = {"folder", "folder.parent", "storedObject", "metadata"})
+    @Query("""
+            SELECT f
+            FROM FileItem f
+            WHERE f.user.id = :userId
+              AND f.folder.id = :folderId
+              AND lower(f.originalName) = lower(:name)
+            """)
+    Optional<FileItem> findInFolderByName(Long userId, Long folderId, String name);
 }

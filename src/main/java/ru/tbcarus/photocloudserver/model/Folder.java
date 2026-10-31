@@ -11,7 +11,6 @@ import java.time.LocalDateTime;
 @Table(
         name = "folder",
         indexes = {
-                @Index(name = "idx_folder_user_parent", columnList = "user_id,parent_id"),
                 @Index(name = "idx_folder_user_type", columnList = "user_id,folder_type")
         }
 )

@@ -9,6 +9,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +30,7 @@ import ru.tbcarus.photocloudserver.service.FileItemService;
 import ru.tbcarus.photocloudserver.service.sync.ChecksumSyncService;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 @RestController
@@ -110,8 +112,18 @@ public class FileController {
         Resource resource = fileItemService.getDownloadResource(file);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(file.getStoredObject().getDetectedMimeType()))
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.getOriginalName() + "\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, attachment(file.getOriginalName()))
                 .body(resource);
+    }
+
+    // ASCII-имя сохраняет прежний вид filename="..."; остальные кодируются по RFC 5987:
+    // Tomcat отбрасывает заголовок с символами вне ISO-8859-1.
+    private String attachment(String filename) {
+        boolean ascii = StandardCharsets.US_ASCII.newEncoder().canEncode(filename);
+        return ContentDisposition.attachment()
+                .filename(filename, ascii ? StandardCharsets.US_ASCII : StandardCharsets.UTF_8)
+                .build()
+                .toString();
     }
 
     // Переименовывает только FileItem.originalName; физическое имя в object storage не меняется.

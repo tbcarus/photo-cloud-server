@@ -3,7 +3,9 @@ package ru.tbcarus.photocloudserver.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import ru.tbcarus.photocloudserver.exception.FileConflictException;
 import ru.tbcarus.photocloudserver.exception.FolderConflictException;
 import ru.tbcarus.photocloudserver.exception.FolderNotFoundException;
 import ru.tbcarus.photocloudserver.exception.FolderOperationException;
@@ -13,6 +15,7 @@ import ru.tbcarus.photocloudserver.model.FolderType;
 import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.repository.FileItemRepository;
 import ru.tbcarus.photocloudserver.repository.FolderRepository;
+import ru.tbcarus.photocloudserver.service.storage.FilenameSanitizer;
 
 import java.util.List;
 import java.util.Objects;
@@ -23,24 +26,72 @@ public class FolderService {
 
     private static final String ROOT_FOLDER_NAME = "root";
     private static final String CAMERA_FOLDER_NAME = "Camera";
-    private static final String FILES_FOLDER_NAME = "Files";
 
     private final FolderRepository folderRepository;
     private final FileItemRepository fileItemRepository;
+    private final FilenameSanitizer filenameSanitizer;
 
+    // Единственный маршрут без явной папки: подходящее медиа идёт в Camera, для обычных файлов папку выбирает клиент.
     @Transactional
     public Folder getDefaultFolder(User user, FileType fileType) {
+        if (fileType != FileType.IMAGE && fileType != FileType.VIDEO) {
+            throw new FolderOperationException("Target folder is required for this file type");
+        }
+        return getOrCreateCamera(user);
+    }
+
+    // Идемпотентно: параллельные запросы проходят очередь блокировки ROOT и получают одну Camera.
+    @Transactional
+    public Folder getOrCreateCamera(User user) {
+        lockUserTree(user);
         Folder root = getOrCreateRoot(user);
-        return switch (fileType) {
-            case IMAGE, VIDEO -> getOrCreateSystemChild(user, root, CAMERA_FOLDER_NAME, FolderType.CAMERA);
-            default -> getOrCreateSystemChild(user, root, FILES_FOLDER_NAME, FolderType.FILES);
-        };
+        return folderRepository.findByUserIdAndParentIdAndFolderType(user.getId(), root.getId(), FolderType.CAMERA)
+                .orElseGet(() -> folderRepository.saveAndFlush(Folder.builder()
+                        .user(user)
+                        .parent(root)
+                        .name(CAMERA_FOLDER_NAME)
+                        .folderType(FolderType.CAMERA)
+                        .build()));
     }
 
     @Transactional
     public Folder getOrCreateRoot(User user) {
         return folderRepository.findRootByUserId(user.getId())
-                .orElseGet(() -> createRootRaceSafe(user));
+                .orElseGet(() -> {
+                    folderRepository.insertRootIfAbsent(user.getId(), ROOT_FOLDER_NAME);
+                    return folderRepository.findRootByUserId(user.getId()).orElseThrow();
+                });
+    }
+
+    // Сериализует структурные изменения пользователя: блокировка строки ROOT живёт до конца текущей транзакции.
+    // MANDATORY: вне транзакции блокировка снялась бы сразу и ничего не защитила.
+    // Вызывается первым в транзакции: всё, что проверяется под блокировкой, должно быть прочитано уже после неё.
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void lockUserTree(User user) {
+        if (folderRepository.findRootByUserIdForUpdate(user.getId()).isEmpty()) {
+            folderRepository.insertRootIfAbsent(user.getId(), ROOT_FOLDER_NAME);
+            folderRepository.findRootByUserIdForUpdate(user.getId()).orElseThrow();
+        }
+    }
+
+    // Файлы и папки каталога делят одно пространство имён. Строгая проверка — только под lockUserTree;
+    // вне блокировки вызов лишь отказывает раньше, до работы с байтами.
+    @Transactional(readOnly = true)
+    public void ensureNameAvailable(User user, Folder parent, String name, Long currentFileId, Long currentFolderId) {
+        // ASCII-имя сравнивается в Java одинаково с lower() в PostgreSQL; Camera может быть ещё не создана.
+        if (parent.getFolderType() == FolderType.ROOT && CAMERA_FOLDER_NAME.equalsIgnoreCase(name)) {
+            throw new FolderConflictException("Name is reserved for system folder");
+        }
+        fileItemRepository.findInFolderByName(user.getId(), parent.getId(), name)
+                .filter(file -> !Objects.equals(file.getId(), currentFileId))
+                .ifPresent(file -> {
+                    throw new FileConflictException("File with this name already exists in folder");
+                });
+        folderRepository.findByUserIdAndParentIdAndName(user.getId(), parent.getId(), name)
+                .filter(folder -> !Objects.equals(folder.getId(), currentFolderId))
+                .ifPresent(folder -> {
+                    throw new FolderConflictException("Folder with this name already exists in parent folder");
+                });
     }
 
     @Transactional(readOnly = true)
@@ -51,21 +102,21 @@ public class FolderService {
 
     @Transactional
     public Folder createFolder(User user, Long parentId, String name) {
+        filenameSanitizer.validateLibraryName(name);
+        lockUserTree(user);
         Folder parent = parentId == null ? getOrCreateRoot(user) : getFolderForUser(parentId, user);
-        String normalizedName = normalizeName(name);
 
-        // Инвариант: системные CAMERA/FILES являются листьями для пользовательских папок.
-        if (isSystemLeaf(parent)) {
+        // Инвариант: системная CAMERA является листом для пользовательских папок.
+        if (isCamera(parent)) {
             throw new FolderOperationException("Cannot create folder inside " + parent.getFolderType());
         }
-        ensureSystemRootNameIsNotReserved(parent, normalizedName);
-        ensureNameIsFree(user.getId(), parent.getId(), normalizedName, null);
+        ensureNameAvailable(user, parent, name, null, null);
 
         try {
-            return folderRepository.save(Folder.builder()
+            return folderRepository.saveAndFlush(Folder.builder()
                     .user(user)
                     .parent(parent)
-                    .name(normalizedName)
+                    .name(name)
                     .folderType(FolderType.USER)
                     .build());
         } catch (DataIntegrityViolationException ex) {
@@ -76,17 +127,17 @@ public class FolderService {
 
     @Transactional
     public Folder renameFolder(User user, Long folderId, String name) {
+        lockUserTree(user);
         Folder folder = getFolderForUser(folderId, user);
-        String normalizedName = normalizeName(name);
 
         // Системные папки имеют стабильные имена, на них завязаны default-folder правила upload.
         ensureUserFolder(folder, "Cannot rename system folder");
-        ensureSystemRootNameIsNotReserved(folder.getParent(), normalizedName);
-        ensureNameIsFree(user.getId(), folder.getParent().getId(), normalizedName, folder.getId());
+        filenameSanitizer.validateLibraryName(name);
+        ensureNameAvailable(user, folder.getParent(), name, null, folder.getId());
 
-        folder.setName(normalizedName);
+        folder.setName(name);
         try {
-            return folderRepository.save(folder);
+            return folderRepository.saveAndFlush(folder);
         } catch (DataIntegrityViolationException ex) {
             throw new FolderConflictException("Folder with this name already exists in parent folder");
         }
@@ -94,24 +145,24 @@ public class FolderService {
 
     @Transactional
     public Folder moveFolder(User user, Long folderId, Long targetParentId) {
+        lockUserTree(user);
         Folder folder = getFolderForUser(folderId, user);
         Folder targetParent = getFolderForUser(targetParentId, user);
 
-        // Перемещать можно только USER-папки: ROOT/CAMERA/FILES фиксируют базовую структуру пользователя.
+        // Перемещать можно только USER-папки: ROOT/CAMERA фиксируют базовую структуру пользователя.
         ensureUserFolder(folder, "Cannot move system folder");
         if (Objects.equals(folder.getId(), targetParent.getId())) {
             throw new FolderOperationException("Cannot move folder into itself");
         }
-        if (isSystemLeaf(targetParent)) {
+        if (isCamera(targetParent)) {
             throw new FolderOperationException("Cannot move folder into " + targetParent.getFolderType());
         }
         ensureNotDescendant(folder, targetParent);
-        ensureSystemRootNameIsNotReserved(targetParent, folder.getName());
-        ensureNameIsFree(user.getId(), targetParent.getId(), folder.getName(), folder.getId());
+        ensureNameAvailable(user, targetParent, folder.getName(), null, folder.getId());
 
         folder.setParent(targetParent);
         try {
-            return folderRepository.save(folder);
+            return folderRepository.saveAndFlush(folder);
         } catch (DataIntegrityViolationException ex) {
             throw new FolderConflictException("Folder with this name already exists in target folder");
         }
@@ -119,6 +170,7 @@ public class FolderService {
 
     @Transactional
     public void deleteFolder(User user, Long folderId) {
+        lockUserTree(user);
         Folder folder = getFolderForUser(folderId, user);
 
         // TODO: В будущем реализовать рекурсивное удаление с учётом шаринга.
@@ -146,49 +198,6 @@ public class FolderService {
                 .orElseThrow(() -> new FolderNotFoundException(folderId));
     }
 
-    private Folder createRootRaceSafe(User user) {
-        try {
-            return folderRepository.saveAndFlush(Folder.builder()
-                    .user(user)
-                    .parent(null)
-                    .name(ROOT_FOLDER_NAME)
-                    .folderType(FolderType.ROOT)
-                    .build());
-        } catch (DataIntegrityViolationException ex) {
-            // Root должен быть единственным; при гонке второй запрос перечитывает уже созданный root.
-            return folderRepository.findRootByUserId(user.getId())
-                    .orElseThrow(() -> ex);
-        }
-    }
-
-    private Folder getOrCreateSystemChild(User user, Folder root, String name, FolderType folderType) {
-        return folderRepository.findByUserIdAndParentIdAndFolderType(user.getId(), root.getId(), folderType)
-                .orElseGet(() -> createSystemChildRaceSafe(user, root, name, folderType));
-    }
-
-    private Folder createSystemChildRaceSafe(User user, Folder root, String name, FolderType folderType) {
-        try {
-            return folderRepository.saveAndFlush(Folder.builder()
-                    .user(user)
-                    .parent(root)
-                    .name(name)
-                    .folderType(folderType)
-                    .build());
-        } catch (DataIntegrityViolationException ex) {
-            // CAMERA/FILES тоже создаются лениво, поэтому параллельный upload может первым создать ту же папку.
-            return folderRepository.findByUserIdAndParentIdAndFolderType(user.getId(), root.getId(), folderType)
-                    .orElseThrow(() -> ex);
-        }
-    }
-
-    private void ensureNameIsFree(Long userId, Long parentId, String name, Long currentFolderId) {
-        folderRepository.findByUserIdAndParentIdAndName(userId, parentId, name)
-                .filter(folder -> !Objects.equals(folder.getId(), currentFolderId))
-                .ifPresent(folder -> {
-                    throw new FolderConflictException("Folder with this name already exists in parent folder");
-                });
-    }
-
     private void ensureNotDescendant(Folder folder, Folder targetParent) {
         Folder current = targetParent;
         while (current != null) {
@@ -206,26 +215,7 @@ public class FolderService {
         }
     }
 
-    private void ensureSystemRootNameIsNotReserved(Folder parent, String name) {
-        if (parent.getFolderType() == FolderType.ROOT
-                && (CAMERA_FOLDER_NAME.equalsIgnoreCase(name) || FILES_FOLDER_NAME.equalsIgnoreCase(name))) {
-            // Инвариант: имена Camera/Files в root зарезервированы под системные папки upload pipeline.
-            throw new FolderConflictException("Folder name is reserved for system folder");
-        }
-    }
-
-    private boolean isSystemLeaf(Folder folder) {
-        return folder.getFolderType() == FolderType.CAMERA || folder.getFolderType() == FolderType.FILES;
-    }
-
-    private String normalizeName(String name) {
-        String normalizedName = name == null ? "" : name.trim();
-        if (normalizedName.isBlank()) {
-            throw new FolderOperationException("Folder name must not be blank");
-        }
-        if (normalizedName.length() > 255) {
-            throw new FolderOperationException("Folder name must be at most 255 characters");
-        }
-        return normalizedName;
+    private boolean isCamera(Folder folder) {
+        return folder.getFolderType() == FolderType.CAMERA;
     }
 }

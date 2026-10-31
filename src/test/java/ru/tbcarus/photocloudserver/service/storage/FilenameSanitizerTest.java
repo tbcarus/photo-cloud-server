@@ -6,9 +6,12 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.text.Normalizer;
 import java.util.Locale;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class FilenameSanitizerTest {
 
@@ -174,6 +177,41 @@ class FilenameSanitizerTest {
         assertThat(utf8Length(physical)).isLessThanOrEqualTo(MAX_COMPONENT_BYTES);
         assertThat(hasUnpairedSurrogate(physical)).isFalse();
         assertThat(physical).doesNotContainPattern("[<>:\"/\\\\|?*\\p{Cntrl}]");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"a/b", "a\\b", "a:b", "a*b", "a?b", "a\"b", "a<b", "a>b", "a|b", "a\nb", "a\u0000b", "a\u007Fb", "a\u0085b",
+            "a\uD83Db", ".", "..", "name.", "name ", "...", "CON", "con.txt", "Aux.tar.gz", "NUL ", "COM1", "lpt9.txt", "PRN .txt"})
+    void invalidLibraryNameIsRejected(String name) {
+        assertThatThrownBy(() -> sanitizer.validateLibraryName(name)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", " ", "   ", "　"})
+    void blankLibraryNameIsRejected(String name) {
+        assertThatThrownBy(() -> sanitizer.validateLibraryName(name)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> sanitizer.validateLibraryName(null)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {".nomedia", ".a", " leading", "a b.txt", "a.b.c", "CONSOLE", "COM10.txt", "x.CON", "файл.txt", "日本語", "😀.png"})
+    void validLibraryNameIsAccepted(String name) {
+        assertThatCode(() -> sanitizer.validateLibraryName(name)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void libraryNameLengthIsCountedInUtf8Bytes() {
+        assertThatCode(() -> sanitizer.validateLibraryName("a".repeat(255))).doesNotThrowAnyException();
+        assertThatCode(() -> sanitizer.validateLibraryName("я".repeat(127) + "a")).doesNotThrowAnyException();
+        assertThatThrownBy(() -> sanitizer.validateLibraryName("a".repeat(256))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> sanitizer.validateLibraryName("я".repeat(128))).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void libraryNameMustBeInNfc() {
+        assertThatCode(() -> sanitizer.validateLibraryName("Й.txt")).doesNotThrowAnyException();
+        assertThatThrownBy(() -> sanitizer.validateLibraryName(Normalizer.normalize("Й.txt", Normalizer.Form.NFD)))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

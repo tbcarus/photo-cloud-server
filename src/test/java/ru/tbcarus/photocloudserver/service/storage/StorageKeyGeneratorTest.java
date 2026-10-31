@@ -48,7 +48,7 @@ class StorageKeyGeneratorTest {
             Locale.setDefault(Locale.forLanguageTag("th-TH-u-nu-thai"));
             assertThat(generator.generateFilePath(7L, FolderType.CAMERA, LocalDateTime.of(2023, 1, 1, 0, 0)))
                     .isEqualTo("7/camera/2023");
-            assertThat(generator.generateFilePath(7L, FolderType.FILES, LocalDateTime.of(2023, 1, 1, 0, 0)))
+            assertThat(generator.generateFilePath(7L, FolderType.ROOT, LocalDateTime.of(2023, 1, 1, 0, 0)))
                     .isEqualTo("7/files");
             assertThat(generator.generateUserRootPath(7L)).isEqualTo("7");
         } finally {

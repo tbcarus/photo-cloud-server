@@ -38,31 +38,25 @@ class FolderApiIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void cannotDeleteRootCameraOrFiles() throws Exception {
+    void cannotDeleteRootOrCamera() throws Exception {
         String token = createUserAndLogin("delete-system@test.local");
         Long rootId = getRootId(token);
         FileItemDto image = upload(token, "photo.jpg", "image/jpeg", jpegBytes());
-        FileItemDto document = upload(token, "document.pdf", "application/pdf", "document".getBytes());
         Long cameraId = findFileItem(image.getId()).getFolder().getId();
-        Long filesId = findFileItem(document.getId()).getFolder().getId();
 
         perform(delete("/api/v1/folders/{id}", rootId).header(HttpHeaders.AUTHORIZATION, authHeader(token)))
                 .andExpect(status().isBadRequest());
         perform(delete("/api/v1/folders/{id}", cameraId).header(HttpHeaders.AUTHORIZATION, authHeader(token)))
                 .andExpect(status().isBadRequest());
-        perform(delete("/api/v1/folders/{id}", filesId).header(HttpHeaders.AUTHORIZATION, authHeader(token)))
-                .andExpect(status().isBadRequest());
     }
 
     @Test
-    void cannotMoveRootCameraOrFiles() throws Exception {
+    void cannotMoveRootOrCamera() throws Exception {
         String token = createUserAndLogin("move-system@test.local");
         Long rootId = getRootId(token);
         Long userFolderId = createFolder(token, rootId, "Albums").get("id").asLong();
         FileItemDto image = upload(token, "photo.jpg", "image/jpeg", jpegBytes());
-        FileItemDto document = upload(token, "document.pdf", "application/pdf", "document".getBytes());
         Long cameraId = findFileItem(image.getId()).getFolder().getId();
-        Long filesId = findFileItem(document.getId()).getFolder().getId();
 
         perform(post("/api/v1/folders/{id}/move", rootId)
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token))
@@ -74,15 +68,10 @@ class FolderApiIntegrationTest extends AbstractIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(moveBody(userFolderId)))
                 .andExpect(status().isBadRequest());
-        perform(post("/api/v1/folders/{id}/move", filesId)
-                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(moveBody(userFolderId)))
-                .andExpect(status().isBadRequest());
     }
 
     @Test
-    void cannotRenameRootCameraOrFiles() throws Exception {
+    void cannotRenameRootOrCamera() throws Exception {
         String token = createUserAndLogin("rename-system@test.local");
         Long rootId = getRootId(token);
         FileItemDto image = upload(token, "photo.jpg", "image/jpeg", jpegBytes());
@@ -101,20 +90,14 @@ class FolderApiIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void cannotCreateFolderInsideCameraOrFiles() throws Exception {
+    void cannotCreateFolderInsideCamera() throws Exception {
         String token = createUserAndLogin("system-leaf@test.local");
         FileItemDto image = upload(token, "photo.jpg", "image/jpeg", jpegBytes());
-        FileItemDto document = upload(token, "document.pdf", "application/pdf", "document".getBytes());
 
         perform(post("/api/v1/folders")
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(createBody(findFileItem(image.getId()).getFolder().getId(), "Child")))
-                .andExpect(status().isBadRequest());
-        perform(post("/api/v1/folders")
-                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(createBody(findFileItem(document.getId()).getFolder().getId(), "Child")))
                 .andExpect(status().isBadRequest());
     }
 
@@ -133,20 +116,20 @@ class FolderApiIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void cameraAndFilesNamesAreReservedInRoot() throws Exception {
+    void cameraNameIsReservedInRootAndFilesIsNot() throws Exception {
         String token = createUserAndLogin("reserved@test.local");
         Long rootId = getRootId(token);
 
         perform(post("/api/v1/folders")
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(createBody(rootId, "Camera")))
+                        .content(createBody(rootId, "cAMERA")))
                 .andExpect(status().isConflict());
         perform(post("/api/v1/folders")
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(createBody(rootId, "files")))
-                .andExpect(status().isConflict());
+                        .content(createBody(rootId, "Files")))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -256,36 +239,13 @@ class FolderApiIntegrationTest extends AbstractIntegrationTest {
         String token = createUserAndLogin("upload-folder@test.local");
 
         FileItemDto image = upload(token, "photo.jpg", "image/jpeg", jpegBytes());
-        FileItemDto document = upload(token, "document.pdf", "application/pdf", "document".getBytes());
 
         assertThat(findFileItem(image.getId()).getFolder().getFolderType()).isEqualTo(FolderType.CAMERA);
-        assertThat(findFileItem(document.getId()).getFolder().getFolderType()).isEqualTo(FolderType.FILES);
     }
 
     private String createUserAndLogin(String email) throws Exception {
         createUser(email, PASSWORD);
         return loginAndGetAccessToken(email, PASSWORD);
-    }
-
-    private Long getRootId(String token) throws Exception {
-        String body = perform(get("/api/v1/folders/root")
-                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-        return objectMapper.readTree(body).get("id").asLong();
-    }
-
-    private JsonNode createFolder(String token, Long parentId, String name) throws Exception {
-        return objectMapper.readTree(perform(post("/api/v1/folders")
-                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(createBody(parentId, name)))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString());
     }
 
     private JsonNode getChildren(String token, Long parentId) throws Exception {

@@ -5,7 +5,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -98,21 +97,16 @@ public class FileItemService {
             LocalDateTime uploadedAt = LocalDateTime.now();
             LocalDateTime capturedAt = extractedMetadata.getCapturedAt() == null ? uploadedAt : extractedMetadata.getCapturedAt();
             Folder folder = resolveTargetFolder(user, folderId, fileType);
-            String originalName = filenameSanitizer.limitOriginalNameWithExtension(file.getOriginalFilename(), 255);
+            String originalName = uploadName(folder, file.getOriginalFilename());
 
-            // Дубль определяется как user + folder + checksum: если такой файл уже есть в этой папке,
-            // upload идемпотентен — не создаём ни новый StoredObject, ни новый FileItem.
-            // Тот же checksum в другой папке дублем не считается и приведёт к новой загрузке.
-            Optional<FileItem> existingInFolder = fileItemRepository
-                    .findFirstByUserIdAndFolderIdAndChecksumOrderByIdAsc(user.getId(), folder.getId(), checksum);
-            if (existingInFolder.isPresent()) {
+            // Повтор той же загрузки идемпотентен: не создаём ни новый StoredObject, ни новый FileItem.
+            // Занятое имя даёт конфликт ещё до публикации; строгая проверка повторяется под блокировкой при сохранении.
+            Optional<FileItem> existingFile = findUploadedFile(user, folder, originalName, checksum);
+            if (existingFile.isPresent()) {
                 deleteIfExists(tempFile);
                 tempFile = null;
-                return fileItemMapper.toDto(existingInFolder.get());
+                return fileItemMapper.toDto(existingFile.get());
             }
-
-            // Имя проверяем только для действительно новой загрузки в папку.
-            ensureFileNameAvailable(user.getId(), folder, originalName, null);
 
             // Физический каталог: CAMERA → год съёмки, остальные папки → files.
             String filePath = storageKeyGenerator.generateFilePath(user.getId(), folder.getFolderType(), capturedAt);
@@ -143,13 +137,9 @@ public class FileItemService {
                         fileType,
                         finalFile
                 );
-            } catch (DataIntegrityViolationException ex) {
-                // Гонка: параллельный upload уже создал FileItem с таким checksum в этой папке (уникальность user+folder+checksum).
-                // Свой файл saveForPublishedFile уже удалил при откате (или оставил при неизвестном исходе фиксации).
-                FileItem racedFileItem = fileItemRepository
-                        .findFirstByUserIdAndFolderIdAndChecksumOrderByIdAsc(user.getId(), folder.getId(), checksum)
-                        .orElseThrow(() -> ex);
-                return fileItemMapper.toDto(racedFileItem);
+            } catch (UploadRaceLostException ex) {
+                // Параллельный upload того же файла зафиксирован первым; свой файл saveForPublishedFile уже удалил при откате.
+                return fileItemMapper.toDto(ex.existingFile);
             }
             // DTO строим после фиксации: ошибка маппинга не должна удалять байты уже сохранённой записи.
             return fileItemMapper.toDto(saved);
@@ -194,14 +184,21 @@ public class FileItemService {
     }
 
     public FileItemDto renameFileForCurrentUser(Long fileId, RenameFileRequest request, User user) {
-        String originalName = normalizeOriginalName(request.originalName());
         // Изменяем managed-сущность в одной транзакции: save() detached-объекта через merge вернул бы копию
         // с неинициализированным proxy StoredObject, и маппинг после закрытия сессии упал бы с LazyInitializationException.
         TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
         FileItem renamed = transactionTemplate.execute(status -> {
+            folderService.lockUserTree(user);
             FileItem file = getFileForCurrentUser(fileId, user);
             // Переименование меняет только логическую запись: физическое имя стабильно и принадлежит object storage.
-            ensureFileNameAvailable(user.getId(), file.getFolder(), originalName, file.getId());
+            String originalName;
+            if (isCamera(file.getFolder())) {
+                originalName = normalizeOriginalName(request.originalName());
+            } else {
+                originalName = request.originalName();
+                filenameSanitizer.validateLibraryName(originalName);
+                folderService.ensureNameAvailable(user, file.getFolder(), originalName, file.getId(), null);
+            }
             file.setOriginalName(originalName);
             return fileItemRepository.save(file);
         });
@@ -212,10 +209,16 @@ public class FileItemService {
         // Как и rename: работаем с managed-сущностью, загруженной вместе со StoredObject и metadata.
         TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
         FileItem moved = transactionTemplate.execute(status -> {
+            folderService.lockUserTree(user);
             FileItem file = getFileForCurrentUser(fileId, user);
             Folder targetFolder = folderService.getFolderForUser(request.targetFolderId(), user);
+            if (isCamera(file.getFolder()) != isCamera(targetFolder)) {
+                throw new IllegalArgumentException("Cannot move file between Camera and library folders");
+            }
             // Физический файл не перемещаем: дерево папок живёт в БД, а storage работает как object storage.
-            ensureFileNameAvailable(user.getId(), targetFolder, file.getOriginalName(), file.getId());
+            if (!isCamera(targetFolder)) {
+                folderService.ensureNameAvailable(user, targetFolder, file.getOriginalName(), file.getId(), null);
+            }
             file.setFolder(targetFolder);
             return fileItemRepository.save(file);
         });
@@ -233,13 +236,13 @@ public class FileItemService {
         Folder targetFolder = request.targetFolderId() == null
                 ? sourceFile.getFolder()
                 : folderService.getFolderForUser(request.targetFolderId(), user);
-        String originalName = request.originalName() == null || request.originalName().isBlank()
-                ? sourceFile.getOriginalName()
-                : normalizeOriginalName(request.originalName());
+        if (isCamera(targetFolder) && !isCamera(sourceFile.getFolder())) {
+            throw new IllegalArgumentException("Cannot copy library file into Camera");
+        }
+        String originalName = copyName(targetFolder, request.originalName(), sourceFile.getOriginalName());
 
-        ensureFileNameAvailable(user.getId(), targetFolder, originalName, null);
-        // Дубль логического файла в папке запрещён (user + folder + checksum); copy не создаёт дубль в той же папке.
-        ensureChecksumAvailableInFolder(user.getId(), targetFolder, sourceStoredObject.getChecksum());
+        // Конфликт виден ещё до копирования байтов; строгая проверка повторяется под блокировкой при сохранении.
+        ensureCopyTargetAvailable(user, targetFolder, originalName, sourceStoredObject.getChecksum());
 
         Path sourcePath = storagePathResolver.resolve(sourceStoredObject.getFilePath(), sourceStoredObject.getFilename());
         // Копия остаётся в физическом каталоге источника (camera/YYYY или files) независимо от целевой папки:
@@ -282,24 +285,32 @@ public class FileItemService {
     }
 
     public void deleteFileForCurrentUser(Long fileId, User user) {
-        FileItem file = getFileForCurrentUser(fileId, user);
-        StoredObject storedObject = file.getStoredObject();
-        Path path = storagePathResolver.resolve(storedObject.getFilePath(), storedObject.getFilename());
-
-        if (!file.getUser().getId().equals(storedObject.getUser().getId())) {
-            fileItemRepository.delete(file);
-            return;
-        }
-
+        // В общей очереди: rename и move не застанут уже удалённую запись, а повтор delete получит 404.
         TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
-        transactionTemplate.executeWithoutResult(status -> {
+        Path path = transactionTemplate.execute(status -> {
+            folderService.lockUserTree(user);
+            FileItem file = getFileForCurrentUser(fileId, user);
+            StoredObject storedObject = file.getStoredObject();
+
+            if (!file.getUser().getId().equals(storedObject.getUser().getId())) {
+                fileItemRepository.delete(file);
+                return null;
+            }
+
             // Владелец физического объекта удаляет все логические записи, которые на него ссылаются.
             // TODO: При появлении sharing нужно пересмотреть права доступа и удаление чужих FileItem.
+            Path physicalPath = storagePathResolver.resolve(storedObject.getFilePath(), storedObject.getFilename());
             fileItemRepository.deleteAll(fileItemRepository.findAllByStoredObjectId(storedObject.getId()));
             fileItemRepository.flush();
             storedObjectRepository.delete(storedObject);
+            return physicalPath;
         });
 
+        if (path == null) {
+            return;
+        }
+
+        // Байты удаляются после фиксации: при откате запись не останется без файла.
         try {
             Files.deleteIfExists(path);
         } catch (IOException ex) {
@@ -318,22 +329,49 @@ public class FileItemService {
         return folderService.getFolderForUser(folderId, user);
     }
 
-    private void ensureFileNameAvailable(Long userId, Folder folder, String originalName, Long currentFileId) {
-        if (folder.getFolderType() == FolderType.CAMERA) {
-            return;
-        }
-        boolean exists = currentFileId == null
-                ? fileItemRepository.existsByUserIdAndFolderIdAndOriginalNameIgnoreCase(userId, folder.getId(), originalName)
-                : fileItemRepository.existsByUserIdAndFolderIdAndOriginalNameIgnoreCaseAndIdNot(userId, folder.getId(), originalName, currentFileId);
-        if (exists) {
-            // TODO: Позже можно добавить overwrite/replace или auto-rename вида "file (1).jpg".
-            // TODO: Строгая DB-уникальность с исключением CAMERA потребует денормализации или trigger.
-            throw new FileConflictException("File with this name already exists in folder");
-        }
+    private boolean isCamera(Folder folder) {
+        return folder.getFolderType() == FolderType.CAMERA;
     }
 
-    private void ensureChecksumAvailableInFolder(Long userId, Folder folder, String checksum) {
-        if (fileItemRepository.findFirstByUserIdAndFolderIdAndChecksumOrderByIdAsc(userId, folder.getId(), checksum).isPresent()) {
+    // Camera сохраняет прежнее очищение имени; в обычной библиотеке имя принимается только как есть.
+    private String uploadName(Folder folder, String requestedName) {
+        if (isCamera(folder)) {
+            return filenameSanitizer.limitOriginalNameWithExtension(requestedName, 255);
+        }
+        filenameSanitizer.validateLibraryName(requestedName);
+        return requestedName;
+    }
+
+    private String copyName(Folder targetFolder, String requestedName, String sourceName) {
+        String name = requestedName == null || requestedName.isBlank() ? sourceName : requestedName;
+        if (isCamera(targetFolder)) {
+            return normalizeOriginalName(name);
+        }
+        filenameSanitizer.validateLibraryName(name);
+        return name;
+    }
+
+    // Файл, который уже закрывает эту загрузку: в Camera — по checksum, в библиотеке — то же имя с тем же содержимым.
+    // Другое содержимое или папка под этим именем в библиотеке — конфликт.
+    private Optional<FileItem> findUploadedFile(User user, Folder folder, String originalName, String checksum) {
+        if (isCamera(folder)) {
+            return fileItemRepository.findFirstByUserIdAndFolderIdAndChecksumOrderByIdAsc(user.getId(), folder.getId(), checksum);
+        }
+        Optional<FileItem> sameContent = fileItemRepository.findInFolderByName(user.getId(), folder.getId(), originalName)
+                .filter(file -> file.getChecksum().equals(checksum));
+        if (sameContent.isEmpty()) {
+            folderService.ensureNameAvailable(user, folder, originalName, null, null);
+        }
+        return sameContent;
+    }
+
+    private void ensureCopyTargetAvailable(User user, Folder folder, String originalName, String checksum) {
+        if (!isCamera(folder)) {
+            folderService.ensureNameAvailable(user, folder, originalName, null, null);
+            return;
+        }
+        // Дубль в Camera запрещён (user + folder + checksum); copy не создаёт дубль в той же папке.
+        if (fileItemRepository.findFirstByUserIdAndFolderIdAndChecksumOrderByIdAsc(user.getId(), folder.getId(), checksum).isPresent()) {
             throw new FileConflictException("File with this checksum already exists in folder");
         }
     }
@@ -441,6 +479,12 @@ public class FileItemService {
                                                    FileType fileType,
                                                    Path publishedFile) {
         return saveForPublishedFile(publishedFile, () -> {
+            folderService.lockUserTree(user);
+            // Под блокировкой: папку могли удалить, а имя или checksum занять после проверки до публикации.
+            folderService.getFolderForUser(folder.getId(), user);
+            findUploadedFile(user, folder, originalName, checksum).ifPresent(existingFile -> {
+                throw new UploadRaceLostException(existingFile);
+            });
             StoredObject storedObject = storedObjectRepository.save(StoredObject.builder()
                     .user(user)
                     .filePath(filePath)
@@ -491,6 +535,9 @@ public class FileItemService {
                                                          String filename,
                                                          Path publishedFile) {
         return saveForPublishedFile(publishedFile, () -> {
+            folderService.lockUserTree(user);
+            folderService.getFolderForUser(folder.getId(), user);
+            ensureCopyTargetAvailable(user, folder, originalName, sourceStoredObject.getChecksum());
             StoredObject copiedStoredObject = storedObjectRepository.save(StoredObject.builder()
                     .user(user)
                     .filePath(filePath)
@@ -564,6 +611,15 @@ public class FileItemService {
             Files.deleteIfExists(path);
         } catch (IOException cleanupEx) {
             log.error("Не удалось удалить файл при cleanup: {}", path, cleanupEx);
+        }
+    }
+
+    // Откатывает транзакцию проигравшего параллельного upload и передаёт файл победителя как обычный ответ.
+    private static final class UploadRaceLostException extends RuntimeException {
+        private final transient FileItem existingFile;
+
+        private UploadRaceLostException(FileItem existingFile) {
+            this.existingFile = existingFile;
         }
     }
 }

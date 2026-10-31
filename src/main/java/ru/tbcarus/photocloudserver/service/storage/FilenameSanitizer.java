@@ -2,6 +2,7 @@ package ru.tbcarus.photocloudserver.service.storage;
 
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.text.Normalizer;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -15,6 +16,35 @@ public class FilenameSanitizer {
     // Имена устройств Windows запрещены как часть имени до первой точки, даже с расширением: CON.jpg ≡ CON.
     private static final Pattern WINDOWS_RESERVED_STEM =
             Pattern.compile("(?i)CON|PRN|AUX|NUL|CONIN\\$|CONOUT\\$|COM[0-9¹²³]|LPT[0-9¹²³]");
+    // \p{Cs}: одиночный суррогат нельзя сохранить в UTF-8, ни в БД, ни в имени файла.
+    private static final Pattern LIBRARY_FORBIDDEN_CHARS = Pattern.compile("[/\\\\:*?\"<>|\\p{Cc}\\p{Cs}]");
+
+    // Единая проверка имён обычной библиотеки: имя принимается как есть или отклоняется, ничего не исправляется.
+    public void validateLibraryName(String name) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("Name must not be blank");
+        }
+        if (LIBRARY_FORBIDDEN_CHARS.matcher(name).find()) {
+            throw new IllegalArgumentException("Name must not contain / \\ : * ? \" < > | or control characters");
+        }
+        if (name.equals(".") || name.equals("..")) {
+            throw new IllegalArgumentException("Name must not be . or ..");
+        }
+        if (name.endsWith(".") || name.endsWith(" ")) {
+            throw new IllegalArgumentException("Name must not end with a dot or a space");
+        }
+        if (!Normalizer.isNormalized(name, Normalizer.Form.NFC)) {
+            throw new IllegalArgumentException("Name must be in Unicode NFC form");
+        }
+        int dot = name.indexOf('.');
+        String stem = dot < 0 ? name : name.substring(0, dot);
+        if (WINDOWS_RESERVED_STEM.matcher(stem.stripTrailing()).matches()) {
+            throw new IllegalArgumentException("Name must not be a reserved Windows device name");
+        }
+        if (name.getBytes(StandardCharsets.UTF_8).length > MAX_COMPONENT_BYTES) {
+            throw new IllegalArgumentException("Name must be at most " + MAX_COMPONENT_BYTES + " bytes in UTF-8");
+        }
+    }
 
     public String safeName(String originalFilename) {
         String filename = originalFilename == null ? "" : originalFilename;

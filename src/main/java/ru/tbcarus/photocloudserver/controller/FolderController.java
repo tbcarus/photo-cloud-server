@@ -32,6 +32,7 @@ public class FolderController {
 
     public static final String BASE_URL = ApiPaths.API_V1 + "/folders";
     public static final String ROOT_URL = "/root";
+    public static final String CAMERA_URL = "/camera";
     public static final String CHILDREN_URL = "/{id}/children";
     public static final String FOLDER_ID_URL = "/{id}";
     public static final String MOVE_URL = FOLDER_ID_URL + "/move";
@@ -44,6 +45,14 @@ public class FolderController {
     @GetMapping(ROOT_URL)
     public ResponseEntity<FolderDto> getRoot(@AuthenticationPrincipal User user) {
         return ResponseEntity.ok(folderMapper.toDto(folderService.getOrCreateRoot(user)));
+    }
+
+    // Возвращает Camera текущего пользователя, создавая ROOT и Camera при необходимости.
+    // POST: GET по контракту не создаёт папки, а клиенту ID нужен до первой отправки файла.
+    @Operation(summary = "Get or create current user Camera folder")
+    @PostMapping(CAMERA_URL)
+    public ResponseEntity<FolderDto> getOrCreateCamera(@AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(folderMapper.toDto(folderService.getOrCreateCamera(user)));
     }
 
     // Возвращает только прямых потомков папки, без рекурсивного дерева.

@@ -41,6 +41,7 @@ class PhysicalStorageConflictIntegrationTest extends AbstractIntegrationTest {
 
         perform(multipart("/api/v1/files/upload")
                         .file(filePart("notes.txt", "text/plain", "notes".getBytes()))
+                        .param("folderId", getRootId(token).toString())
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))

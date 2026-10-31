@@ -91,13 +91,13 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     void duplicateUploadIntoSameFolderReturnsExistingFileItemWithoutCreatingDuplicates() throws Exception {
         var user = createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
-        byte[] bytes = "same-content".getBytes();
+        byte[] bytes = JPEG_BYTES;
 
         FileItemDto first = upload(token, "first.jpg", "image/jpeg", bytes);
         long storageFilesAfterFirstUpload = storageFileCount();
         FileItemDto second = upload(token, "second-name.jpg", "image/jpeg", bytes);
 
-        // user + folder + checksum уже есть в этой папке → upload идемпотентен, возвращается существующий FileItem.
+        // user + folder + checksum уже есть в Camera → upload идемпотентен, возвращается существующий FileItem.
         assertThat(second.getId()).isEqualTo(first.getId());
         assertThat(second.getOriginalFilename()).isEqualTo("first.jpg");
         assertThat(second.getChecksum()).isEqualTo(first.getChecksum());
@@ -129,17 +129,28 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void uploadCanTargetFolderAndDefaultUploadStillUsesSystemFolders() throws Exception {
+    void uploadCanTargetFolderAndUploadWithoutFolderIsOnlyForCameraMedia() throws Exception {
         createUser("upload-target@test.local", PASSWORD);
         String token = loginAndGetAccessToken("upload-target@test.local", PASSWORD);
         Long rootId = getRootId(token);
         Long targetFolderId = createFolder(token, rootId, "Target").get("id").asLong();
 
         FileItemDto targeted = upload(token, "target.txt", "text/plain", "target".getBytes(), targetFolderId);
-        FileItemDto defaultUpload = upload(token, "default.txt", "text/plain", "default".getBytes());
+        FileItemDto defaultUpload = upload(token, "default.jpg", "image/jpeg", JPEG_BYTES);
 
         assertThat(findFileItem(targeted.getId()).getFolder().getId()).isEqualTo(targetFolderId);
-        assertThat(findFileItem(defaultUpload.getId()).getFolder().getFolderType()).isEqualTo(FolderType.FILES);
+        assertThat(findFileItem(defaultUpload.getId()).getFolder().getFolderType()).isEqualTo(FolderType.CAMERA);
+
+        // Назначение обычного файла не определено: ни ROOT, ни заменяющая системная папка молча не выбираются.
+        long filesBefore = storageFileCount();
+        perform(multipart("/api/v1/files")
+                        .file(filePart("default.txt", "text/plain", "default".getBytes()))
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("BAD_REQUEST"));
+        assertThat(storageFileCount()).isEqualTo(filesBefore);
+        assertThat(tempFileCount()).isZero();
+        assertThat(fileItemRepository.findAll()).hasSize(2);
     }
 
     @Test
@@ -173,6 +184,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         // Вне CAMERA конфликт имени при другом содержимом остаётся 409.
         perform(multipart("/api/v1/files")
                         .file(filePart("same.txt", "text/plain", "two".getBytes()))
+                        .param("folderId", getRootId(token).toString())
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CONFLICT"));
@@ -230,22 +242,23 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void copyIntoSameFolderWithNewNameIsRejectedAsChecksumDuplicate() throws Exception {
+    void copyIntoSameFolderWithNewNameCreatesIndependentFileInLibrary() throws Exception {
         createUser("copy-checksum@test.local", PASSWORD);
         String token = loginAndGetAccessToken("copy-checksum@test.local", PASSWORD);
         FileItemDto source = upload(token, "source.txt", "text/plain", "copy-content".getBytes());
 
-        // user + folder + checksum уже есть в исходной папке → 409, дубль не создаётся даже с новым именем.
+        // В библиотеке checksum не определяет уникальность: копия с новым именем допустима.
         perform(post("/api/v1/files/{id}/copy", source.getId())
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"originalName":"source-copy.txt"}
                                 """))
-                .andExpect(status().isConflict());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.originalFilename").value("source-copy.txt"));
 
-        assertThat(fileItemRepository.findAll()).hasSize(1);
-        assertThat(storedObjectRepository.findAll()).hasSize(1);
+        assertThat(fileItemRepository.findAll()).hasSize(2);
+        assertThat(storedObjectRepository.findAll()).hasSize(2);
     }
 
     @Test
@@ -358,7 +371,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     @Test
     void uploadDoesNotCallMultipartFileGetBytes() throws Exception {
         var user = createUser("stream@test.local", PASSWORD);
-        byte[] bytes = "streamed-content".getBytes();
+        byte[] bytes = JPEG_BYTES;
         MultipartFile file = new NoGetBytesMultipartFile("stream.txt", bytes, "image/jpeg");
 
         FileItemDto uploaded = fileItemService.uploadFile(file, user);
@@ -776,7 +789,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     void ownerDeleteRemovesAllFileItemsStoredObjectAndPhysicalFile() throws Exception {
         createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
-        byte[] bytes = "same-delete".getBytes();
+        byte[] bytes = JPEG_BYTES;
         FileItemDto first = upload(token, "first.jpg", "image/jpeg", bytes);
         FileItemDto second = upload(token, "second.jpg", "image/jpeg", bytes);
         FileItem firstItem = findFileItem(first.getId());
@@ -877,9 +890,9 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         FileItem imageItem = findFileItem(image.getId());
         FileItem documentItem = findFileItem(document.getId());
         assertThat(imageItem.getFolder().getFolderType()).isEqualTo(FolderType.CAMERA);
-        assertThat(documentItem.getFolder().getFolderType()).isEqualTo(FolderType.FILES);
+        assertThat(documentItem.getFolder().getFolderType()).isEqualTo(FolderType.ROOT);
         assertThat(folderRepository.findAll()).extracting("folderType")
-                .contains(FolderType.ROOT, FolderType.CAMERA, FolderType.FILES);
+                .containsExactlyInAnyOrder(FolderType.ROOT, FolderType.CAMERA);
 
         String filePath = imageItem.getStoredObject().getFilePath();
         String filename = imageItem.getStoredObject().getFilename();
@@ -899,7 +912,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         String token = loginAndGetAccessToken("user1@test.local", PASSWORD);
         String longFilename = "a".repeat(300) + ".jpg";
 
-        FileItemDto uploaded = upload(token, longFilename, "image/jpeg", "long".getBytes());
+        FileItemDto uploaded = upload(token, longFilename, "image/jpeg", JPEG_BYTES);
 
         String filename = findFileItem(uploaded.getId()).getStoredObject().getFilename();
         assertThat(filename.getBytes(StandardCharsets.UTF_8).length).isLessThanOrEqualTo(255);
@@ -913,7 +926,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         // 204 символа укладываются в логический лимит, но в UTF-8 занимают 604 байта.
         String longFilename = "漢".repeat(200) + ".jpg";
 
-        FileItemDto uploaded = upload(token, longFilename, "image/jpeg", "multibyte".getBytes());
+        FileItemDto uploaded = upload(token, longFilename, "image/jpeg", JPEG_BYTES);
 
         FileItem fileItem = findFileItem(uploaded.getId());
         String filename = fileItem.getStoredObject().getFilename();
@@ -994,7 +1007,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         FileItem document = findFileItem(upload(token, "notes.txt", "text/plain", "notes".getBytes()).getId());
         FileItem photo = findFileItem(upload(token, "photo.jpg", "image/jpeg", jpeg, userFolderId).getId());
 
-        assertThat(document.getFolder().getFolderType()).isEqualTo(FolderType.FILES);
+        assertThat(document.getFolder().getFolderType()).isEqualTo(FolderType.ROOT);
         assertThat(photo.getFolder().getFolderType()).isEqualTo(FolderType.USER);
         // Каталог определяется целевой папкой, а не типом файла: фото с EXIF вне CAMERA тоже попадает в files.
         assertThat(document.getStoredObject().getFilePath()).isEqualTo(user.getId() + "/files");
@@ -1023,23 +1036,14 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void copyOfCameraFileKeepsSourceDirectoryAfterMoveAndCreatesSeparateBytes() throws Exception {
+    void copyOfCameraFileKeepsSourceDirectoryAndCreatesSeparateBytes() throws Exception {
         User user = createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
         Long rootId = getRootId(token);
-        Long movedToId = createFolder(token, rootId, "Moved").get("id").asLong();
         Long copyTargetId = createFolder(token, rootId, "CopyTarget").get("id").asLong();
         byte[] jpeg = ExifJpegFixture.jpegWithExifTags(Map.of(ExifJpegFixture.DATE_TIME_ORIGINAL, "2023:12:31 23:30:15"));
         FileItemDto source = upload(token, "IMG_1.jpg", "image/jpeg", jpeg);
 
-        // Логический move в USER-папку не меняет физический каталог источника.
-        perform(post("/api/v1/files/{id}/move", source.getId())
-                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"targetFolderId":%d}
-                                """.formatted(movedToId)))
-                .andExpect(status().isOk());
         long storageFilesBeforeCopy = storageFileCount();
 
         FileItemDto copied = copy(token, source.getId(), copyTargetId);
@@ -1215,17 +1219,6 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         }
     }
 
-    private FileItemDto upload(String accessToken, String filename, String contentType, byte[] bytes, Long folderId) throws Exception {
-        MvcResult result = perform(multipart("/api/v1/files")
-                        .file(filePart(filename, contentType, bytes))
-                        .param("folderId", folderId.toString())
-                        .header(HttpHeaders.AUTHORIZATION, authHeader(accessToken)))
-                .andExpect(status().isOk())
-                .andReturn();
-
-        return objectMapper.readValue(result.getResponse().getContentAsString(), FileItemDto.class);
-    }
-
     private FileItemDto copy(String accessToken, Long fileId, Long targetFolderId) throws Exception {
         MvcResult result = perform(post("/api/v1/files/{id}/copy", fileId)
                         .header(HttpHeaders.AUTHORIZATION, authHeader(accessToken))
@@ -1236,26 +1229,6 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         return objectMapper.readValue(result.getResponse().getContentAsString(), FileItemDto.class);
-    }
-
-    private Long getRootId(String token) throws Exception {
-        MvcResult result = perform(get("/api/v1/folders/root")
-                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
-                .andExpect(status().isOk())
-                .andReturn();
-        return objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asLong();
-    }
-
-    private JsonNode createFolder(String token, Long parentId, String name) throws Exception {
-        MvcResult result = perform(post("/api/v1/folders")
-                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"parentId":%d,"name":"%s"}
-                                """.formatted(parentId, name)))
-                .andExpect(status().isOk())
-                .andReturn();
-        return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
     private JsonNode checksumExists(String token, Long folderId, List<String> checksums) throws Exception {
@@ -1275,10 +1248,11 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         return objectMapper.writeValueAsString(body);
     }
 
-    // Тот же путь, что у Android: явный POST /files/upload.
+    // Тот же endpoint, что у Android: явный POST /files/upload с явной папкой.
     private FileItemDto uploadExplicit(String token, String filename, byte[] bytes) throws Exception {
         MvcResult result = perform(multipart("/api/v1/files/upload")
                         .file(filePart(filename, MediaType.APPLICATION_OCTET_STREAM_VALUE, bytes))
+                        .param("folderId", getRootId(token).toString())
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
                 .andExpect(status().isOk())
                 .andReturn();

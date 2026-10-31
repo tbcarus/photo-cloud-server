@@ -9,7 +9,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -48,6 +47,9 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class FileItemServiceTest {
+
+    // SHA-256 строки "content".
+    private static final String CONTENT_SHA256 = "ed7002b439e9ac845f22357d822bac1444730fbdb6016d3ec9432297b9ec9f73";
 
     @TempDir
     Path storageRoot;
@@ -89,16 +91,14 @@ class FileItemServiceTest {
     @Test
     void finalFileIsRemovedWhenDatabaseSaveFailsAfterMove() throws Exception {
         User user = user();
-        Folder folder = filesFolder(user);
+        Folder folder = libraryFolder(user);
         Path neighbourFile = writeStorageFile("1/files/neighbour.txt", "neighbour");
         MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", "content".getBytes());
 
-        when(folderService.getDefaultFolder(user, FileType.DOCUMENT)).thenReturn(folder);
-        when(fileItemRepository.findFirstByUserIdAndFolderIdAndChecksumOrderByIdAsc(any(), any(), any()))
-                .thenReturn(Optional.empty());
+        when(folderService.getFolderForUser(1L, user)).thenReturn(folder);
         when(storedObjectRepository.save(any())).thenThrow(new RuntimeException("db failed"));
 
-        assertThatThrownBy(() -> fileItemService.uploadFile(file, user))
+        assertThatThrownBy(() -> fileItemService.uploadFile(file, user, 1L))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessage("db failed");
 
@@ -111,14 +111,14 @@ class FileItemServiceTest {
     @Test
     void raceConditionRemovesCurrentFinalFileAndReturnsExistingFileItem() throws Exception {
         User user = user();
-        Folder folder = filesFolder(user);
+        Folder folder = libraryFolder(user);
         StoredObject existingStoredObject = StoredObject.builder()
                 .id(10L)
                 .user(user)
                 .filePath("1/files")
                 .filename("existing.txt")
                 .fileExtension("txt")
-                .checksum("checksum")
+                .checksum(CONTENT_SHA256)
                 .size(7L)
                 .detectedMimeType("text/plain")
                 .fileType(FileType.DOCUMENT)
@@ -130,25 +130,25 @@ class FileItemServiceTest {
                 .user(user)
                 .folder(folder)
                 .storedObject(existingStoredObject)
-                .checksum("checksum")
+                .checksum(CONTENT_SHA256)
                 .originalName("note.txt")
                 .capturedAt(LocalDateTime.now())
                 .uploadedAt(LocalDateTime.now())
                 .build();
         MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", "content".getBytes());
 
-        when(folderService.getDefaultFolder(user, FileType.DOCUMENT)).thenReturn(folder);
-        // Первый вызов (idempotency-проверка) — пусто; второй (после гонки в catch) — уже созданный FileItem.
-        when(fileItemRepository.findFirstByUserIdAndFolderIdAndChecksumOrderByIdAsc(any(), any(), any()))
+        when(folderService.getFolderForUser(1L, user)).thenReturn(folder);
+        // Проверка до публикации — пусто; под блокировкой файл параллельного запроса уже зафиксирован.
+        when(fileItemRepository.findInFolderByName(1L, 1L, "note.txt"))
                 .thenReturn(Optional.empty(), Optional.of(racedFileItem));
-        when(storedObjectRepository.save(any())).thenThrow(new DataIntegrityViolationException("race"));
 
-        var response = fileItemService.uploadFile(file, user);
+        var response = fileItemService.uploadFile(file, user, 1L);
 
         assertThat(response.getId()).isEqualTo(42L);
         assertThat(response.getOriginalFilename()).isEqualTo("note.txt");
         assertThat(Files.readString(winnerFile)).isEqualTo("content");
         assertThat(filesIn("1/files")).isEqualTo(1);
+        verifyNoInteractions(storedObjectRepository);
     }
 
     @Test
@@ -160,12 +160,10 @@ class FileItemServiceTest {
         when(keyGenerator.generateFilename(any(), any())).thenReturn("taken.txt");
         FileItemService service = newService(keyGenerator, new FileItemMapperImpl());
 
-        when(folderService.getDefaultFolder(user, FileType.DOCUMENT)).thenReturn(filesFolder(user));
-        when(fileItemRepository.findFirstByUserIdAndFolderIdAndChecksumOrderByIdAsc(any(), any(), any()))
-                .thenReturn(Optional.empty());
+        when(folderService.getFolderForUser(1L, user)).thenReturn(libraryFolder(user));
 
         MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", "content".getBytes());
-        assertThatThrownBy(() -> service.uploadFile(file, user)).isInstanceOf(FileAlreadyExistsException.class);
+        assertThatThrownBy(() -> service.uploadFile(file, user, 1L)).isInstanceOf(FileAlreadyExistsException.class);
 
         assertThat(Files.readString(foreignFile)).isEqualTo("foreign");
         assertThat(tempFileCount()).isZero();
@@ -182,7 +180,7 @@ class FileItemServiceTest {
         mockSuccessfulUploadPersistence(user);
 
         MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", "content".getBytes());
-        assertThatThrownBy(() -> service.uploadFile(file, user)).hasMessage("mapping failed");
+        assertThatThrownBy(() -> service.uploadFile(file, user, 1L)).hasMessage("mapping failed");
 
         // Транзакция зафиксирована — байты принадлежат сохранённой записи и не удаляются.
         verify(transactionManager).commit(any());
@@ -197,7 +195,7 @@ class FileItemServiceTest {
         doThrow(new TransactionSystemException("commit failed")).when(transactionManager).commit(any());
 
         MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", "content".getBytes());
-        assertThatThrownBy(() -> fileItemService.uploadFile(file, user)).isInstanceOf(TransactionSystemException.class);
+        assertThatThrownBy(() -> fileItemService.uploadFile(file, user, 1L)).isInstanceOf(TransactionSystemException.class);
 
         // Транзакция могла зафиксироваться: лучше orphan-файл, чем запись без байтов.
         assertThat(filesIn("1/files")).isEqualTo(1);
@@ -264,7 +262,7 @@ class FileItemServiceTest {
                 .createdAt(LocalDateTime.of(2026, 1, 2, 3, 4, 5)).build();
         mockSuccessfulUploadPersistence(user);
 
-        fileItemService.uploadFile(new MockMultipartFile("file", "note.txt", "text/plain", "content".getBytes()), user);
+        fileItemService.uploadFile(new MockMultipartFile("file", "note.txt", "text/plain", "content".getBytes()), user, 1L);
 
         Path marker = storageRoot.resolve("1").resolve(filenameSanitizer.ownerMarkerFilename(user.getEmail()));
         assertThat(marker.getParent()).isEqualTo(storageRoot.resolve("1"));
@@ -285,7 +283,7 @@ class FileItemServiceTest {
                 new StorageKeyGenerator(filenameSanitizer, storageProperties), new FileItemMapperImpl(), failingMapper);
         mockSuccessfulUploadPersistence(user);
 
-        var response = service.uploadFile(new MockMultipartFile("file", "note.txt", "text/plain", "content".getBytes()), user);
+        var response = service.uploadFile(new MockMultipartFile("file", "note.txt", "text/plain", "content".getBytes()), user, 1L);
 
         assertThat(response.getOriginalFilename()).isEqualTo("note.txt");
         assertThat(filesIn("1/files")).isEqualTo(1);
@@ -317,9 +315,7 @@ class FileItemServiceTest {
     }
 
     private void mockSuccessfulUploadPersistence(User user) {
-        when(folderService.getDefaultFolder(user, FileType.DOCUMENT)).thenReturn(filesFolder(user));
-        when(fileItemRepository.findFirstByUserIdAndFolderIdAndChecksumOrderByIdAsc(any(), any(), any()))
-                .thenReturn(Optional.empty());
+        when(folderService.getFolderForUser(1L, user)).thenReturn(libraryFolder(user));
         when(storedObjectRepository.save(any(StoredObject.class))).thenAnswer(returnsFirstArg());
         when(fileItemRepository.save(any(FileItem.class))).thenAnswer(returnsFirstArg());
     }
@@ -358,8 +354,8 @@ class FileItemServiceTest {
         return User.builder().id(1L).email("user@test.local").build();
     }
 
-    private static Folder filesFolder(User user) {
-        return Folder.builder().id(1L).user(user).name("Files").folderType(FolderType.FILES).build();
+    private static Folder libraryFolder(User user) {
+        return Folder.builder().id(1L).user(user).name("Trips").folderType(FolderType.USER).build();
     }
 
     private Path writeStorageFile(String relativePath, String content) throws IOException {

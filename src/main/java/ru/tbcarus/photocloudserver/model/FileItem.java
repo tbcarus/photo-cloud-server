@@ -12,8 +12,8 @@ import java.time.LocalDateTime;
                 @Index(name = "idx_file_item_user_captured_uploaded_id", columnList = "user_id,captured_at,uploaded_at,id"),
                 @Index(name = "idx_file_item_folder", columnList = "folder_id"),
                 @Index(name = "idx_file_item_stored_object", columnList = "stored_object_id"),
-                // Уникальность логического файла в папке: один checksum в одной папке пользователя не дублируется.
-                @Index(name = "uk_file_item_user_folder_checksum", columnList = "user_id,folder_id,checksum", unique = true)
+                // Поиск duplicate Camera; уникальность обеспечивает блокировка ROOT, в библиотеке checksum повторяется.
+                @Index(name = "idx_file_item_user_folder_checksum", columnList = "user_id,folder_id,checksum")
         }
 )
 @Getter
@@ -39,7 +39,7 @@ public class FileItem {
     @JoinColumn(name = "stored_object_id", nullable = false)
     private StoredObject storedObject;
 
-    // Checksum дублируется из StoredObject для проверки уникальности логического файла в папке.
+    // Checksum дублируется из StoredObject для поиска duplicate в Camera и сравнения содержимого при upload.
     @Column(nullable = false, length = 64)
     private String checksum;
 

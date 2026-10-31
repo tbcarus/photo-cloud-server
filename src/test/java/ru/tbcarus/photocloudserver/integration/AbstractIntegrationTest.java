@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.apache.tika.Tika;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestInfo;
@@ -31,6 +32,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import ru.tbcarus.photocloudserver.model.FileItem;
+import ru.tbcarus.photocloudserver.model.FileType;
 import ru.tbcarus.photocloudserver.model.Role;
 import ru.tbcarus.photocloudserver.model.StoredObject;
 import ru.tbcarus.photocloudserver.model.User;
@@ -53,6 +55,7 @@ import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.Set;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -158,14 +161,52 @@ public abstract class AbstractIntegrationTest {
         return "Bearer " + accessToken;
     }
 
+    // Upload без folderId доступен только медиа; файлы других типов тесты кладут в ROOT.
     protected FileItemDto upload(String accessToken, String filename, String contentType, byte[] bytes) throws Exception {
+        var request = multipart("/api/v1/files")
+                .file(filePart(filename, contentType, bytes))
+                .header(HttpHeaders.AUTHORIZATION, authHeader(accessToken));
+        FileType detectedType = FileType.fromMimeType(new Tika().detect(bytes));
+        if (detectedType != FileType.IMAGE && detectedType != FileType.VIDEO) {
+            request.param("folderId", getRootId(accessToken).toString());
+        }
+        MvcResult result = perform(request)
+                .andExpect(status().isOk())
+                .andReturn();
+
+        return objectMapper.readValue(result.getResponse().getContentAsString(), FileItemDto.class);
+    }
+
+    protected FileItemDto upload(String accessToken, String filename, String contentType, byte[] bytes, Long folderId) throws Exception {
         MvcResult result = perform(multipart("/api/v1/files")
                         .file(filePart(filename, contentType, bytes))
+                        .param("folderId", folderId.toString())
                         .header(HttpHeaders.AUTHORIZATION, authHeader(accessToken)))
                 .andExpect(status().isOk())
                 .andReturn();
 
         return objectMapper.readValue(result.getResponse().getContentAsString(), FileItemDto.class);
+    }
+
+    protected Long getRootId(String token) throws Exception {
+        MvcResult result = perform(get("/api/v1/folders/root")
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asLong();
+    }
+
+    protected JsonNode createFolder(String token, Long parentId, String name) throws Exception {
+        java.util.Map<String, Object> body = new java.util.HashMap<>();
+        body.put("parentId", parentId);
+        body.put("name", name);
+        MvcResult result = perform(post("/api/v1/folders")
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(body)))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
     protected MockMultipartFile filePart(String filename, String contentType, byte[] bytes) {
