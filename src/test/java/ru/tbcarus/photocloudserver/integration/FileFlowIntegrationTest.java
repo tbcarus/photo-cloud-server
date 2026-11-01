@@ -75,7 +75,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         assertThat(result.getResponse().getContentAsString()).doesNotContain("storedObject");
 
         FileItem fileItem = findFileItem(response.getId());
-        Path storedFile = storedObjectPath(fileItem.getStoredObject());
+        Path storedFile = physicalPath(fileItem);
         assertThat(fileItem.getOriginalName()).isEqualTo("photo.jpg");
         assertThat(fileItem.getStoredObject().getChecksum()).isEqualTo(sha256(bytes));
         assertThat(fileItem.getStoredObject().getSize()).isEqualTo(bytes.length);
@@ -223,7 +223,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         assertThat(copiedItem.getStoredObject().getId()).isNotEqualTo(sourceStoredObjectId);
         assertThat(copiedItem.getChecksum()).isEqualTo(sourceItem.getChecksum());
         assertThat(copiedItem.getStoredObject().getChecksum()).isEqualTo(sourceItem.getStoredObject().getChecksum());
-        assertThat(Files.readAllBytes(storedObjectPath(copiedItem.getStoredObject()))).isEqualTo("copy-content".getBytes());
+        assertThat(Files.readAllBytes(physicalPath(copiedItem))).isEqualTo("copy-content".getBytes());
         assertThat(storageFileCount()).isEqualTo(storageFilesBeforeCopy + 1);
         assertThat(storedObjectRepository.findAll()).hasSize(2);
     }
@@ -262,7 +262,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void moveChangesOnlyFolderAndKeepsStoredObjectAndPhysicalFile() throws Exception {
+    void moveChangesFolderAndPhysicalLocationAndKeepsStoredObject() throws Exception {
         createUser("move-file@test.local", PASSWORD);
         String token = loginAndGetAccessToken("move-file@test.local", PASSWORD);
         Long rootId = getRootId(token);
@@ -270,7 +270,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         FileItemDto uploaded = upload(token, "move.txt", "text/plain", "move".getBytes());
         FileItem before = findFileItem(uploaded.getId());
         Long storedObjectId = before.getStoredObject().getId();
-        Path physicalFile = storedObjectPath(before.getStoredObject());
+        Path physicalFile = physicalPath(before);
 
         MvcResult result = perform(post("/api/v1/files/{id}/move", uploaded.getId())
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token))
@@ -289,7 +289,8 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         FileItem after = findFileItem(moved.getId());
         assertThat(after.getFolder().getId()).isEqualTo(targetFolderId);
         assertThat(after.getStoredObject().getId()).isEqualTo(storedObjectId);
-        assertThat(Files.exists(physicalFile)).isTrue();
+        assertThat(Files.exists(physicalFile)).isFalse();
+        assertThat(Files.readAllBytes(physicalPath(after))).isEqualTo("move".getBytes());
     }
 
     @Test
@@ -538,7 +539,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         byte[] downloaded = download(token, uploaded.getId());
 
         assertThat(uploaded.getChecksum()).isEqualTo(sha256(bytes));
-        assertThat(Files.readAllBytes(storedObjectPath(findFileItem(uploaded.getId()).getStoredObject()))).isEqualTo(bytes);
+        assertThat(Files.readAllBytes(physicalPath(findFileItem(uploaded.getId())))).isEqualTo(bytes);
         assertThat(downloaded).isEqualTo(bytes);
     }
 
@@ -772,7 +773,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         FileItemDto uploaded = upload(token, "delete.jpg", "image/jpeg", "delete".getBytes());
         FileItem fileItem = findFileItem(uploaded.getId());
         Long storedObjectId = fileItem.getStoredObject().getId();
-        Path storedFile = storedObjectPath(fileItem.getStoredObject());
+        Path storedFile = physicalPath(fileItem);
 
         MvcResult result = perform(delete("/api/v1/files/{id}", uploaded.getId())
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
@@ -794,7 +795,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         FileItemDto second = upload(token, "second.jpg", "image/jpeg", bytes);
         FileItem firstItem = findFileItem(first.getId());
         Long storedObjectId = firstItem.getStoredObject().getId();
-        Path storedFile = storedObjectPath(firstItem.getStoredObject());
+        Path storedFile = physicalPath(firstItem);
 
         perform(delete("/api/v1/files/{id}", first.getId())
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
@@ -817,7 +818,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         FileItemDto otherSeed = upload(otherToken, "seed.jpg", "image/jpeg", "seed-bytes".getBytes());
         FileItem ownerItem = findFileItem(ownerUpload.getId());
         FileItem otherSeedItem = findFileItem(otherSeed.getId());
-        Path storedFile = storedObjectPath(ownerItem.getStoredObject());
+        Path storedFile = physicalPath(ownerItem);
 
         FileItem otherLogicalItem = fileItemRepository.save(FileItem.builder()
                 .user(other)
@@ -902,7 +903,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         assertThat(filename).doesNotContain("/");
         assertThat(filename).doesNotContain("\\");
         assertThat(filename).contains("_");
-        Path resolved = storedObjectPath(imageItem.getStoredObject());
+        Path resolved = physicalPath(imageItem);
         assertThat(resolved.startsWith(storageRoot())).isTrue();
     }
 
@@ -933,7 +934,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         assertThat(uploaded.getOriginalFilename()).isEqualTo(longFilename);
         assertThat(filename.getBytes(StandardCharsets.UTF_8).length).isLessThanOrEqualTo(255);
         assertThat(filename).startsWith("漢").contains(".jpg_").endsWith(".jpg");
-        assertThat(Files.exists(storedObjectPath(fileItem.getStoredObject()))).isTrue();
+        assertThat(Files.exists(physicalPath(fileItem))).isTrue();
     }
 
     @Test
@@ -975,7 +976,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         FileItem fileItem = findFileItem(uploaded.getId());
         assertThat(fileItem.getFolder().getFolderType()).isEqualTo(FolderType.CAMERA);
         assertThat(fileItem.getStoredObject().getFilePath()).isEqualTo(user.getId() + "/camera/2023");
-        assertThat(Files.readAllBytes(storedObjectPath(fileItem.getStoredObject()))).isEqualTo(jpeg);
+        assertThat(Files.readAllBytes(physicalPath(fileItem))).isEqualTo(jpeg);
     }
 
     @Test
@@ -994,11 +995,11 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         assertThat(uploaded.getCapturedAt()).isEqualTo(uploaded.getUploadedAt());
         assertThat(fileItem.getStoredObject().getFilePath())
                 .isEqualTo(user.getId() + "/camera/" + uploaded.getUploadedAt().getYear());
-        assertThat(Files.exists(storedObjectPath(fileItem.getStoredObject()))).isTrue();
+        assertThat(Files.exists(physicalPath(fileItem))).isTrue();
     }
 
     @Test
-    void filesAndUserFolderUploadsUseFilesDirectory() throws Exception {
+    void libraryUploadsUseUserTreeWithoutPhysicalKey() throws Exception {
         User user = createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
         Long userFolderId = createFolder(token, getRootId(token), "Trips").get("id").asLong();
@@ -1009,11 +1010,13 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(document.getFolder().getFolderType()).isEqualTo(FolderType.ROOT);
         assertThat(photo.getFolder().getFolderType()).isEqualTo(FolderType.USER);
-        // Каталог определяется целевой папкой, а не типом файла: фото с EXIF вне CAMERA тоже попадает в files.
-        assertThat(document.getStoredObject().getFilePath()).isEqualTo(user.getId() + "/files");
-        assertThat(photo.getStoredObject().getFilePath()).isEqualTo(user.getId() + "/files");
-        assertThat(Files.exists(storedObjectPath(document.getStoredObject()))).isTrue();
-        assertThat(Files.readAllBytes(storedObjectPath(photo.getStoredObject()))).isEqualTo(jpeg);
+        // Каталог определяется целевой папкой, а не типом файла: фото с EXIF вне CAMERA тоже попадает в дерево.
+        assertThat(document.getStoredObject().getFilePath()).isNull();
+        assertThat(photo.getStoredObject().getFilePath()).isNull();
+        assertThat(physicalPath(document)).isEqualTo(storageRoot().resolve(user.getId() + "/files/notes.txt"));
+        assertThat(physicalPath(photo)).isEqualTo(storageRoot().resolve(user.getId() + "/files/Trips/photo.jpg"));
+        assertThat(Files.exists(physicalPath(document))).isTrue();
+        assertThat(Files.readAllBytes(physicalPath(photo))).isEqualTo(jpeg);
     }
 
     @Test
@@ -1030,13 +1033,13 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         assertThat(repeated.getId()).isEqualTo(first.getId());
         assertThat(otherFolder.getId()).isNotEqualTo(first.getId());
         assertThat(findFileItem(first.getId()).getStoredObject().getFilePath()).isEqualTo(user.getId() + "/camera/2023");
-        assertThat(findFileItem(otherFolder.getId()).getStoredObject().getFilePath()).isEqualTo(user.getId() + "/files");
+        assertThat(findFileItem(otherFolder.getId()).getStoredObject().getFilePath()).isNull();
         assertThat(storedObjectRepository.findAll()).hasSize(2);
         assertThat(storageFileCount()).isEqualTo(2);
     }
 
     @Test
-    void copyOfCameraFileKeepsSourceDirectoryAndCreatesSeparateBytes() throws Exception {
+    void copyOfCameraFileGoesIntoTargetFolderAndCreatesSeparateBytes() throws Exception {
         User user = createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
         Long rootId = getRootId(token);
@@ -1053,16 +1056,17 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         assertThat(sourceItem.getStoredObject().getFilePath()).isEqualTo(user.getId() + "/camera/2023");
         assertThat(copiedItem.getFolder().getId()).isEqualTo(copyTargetId);
         assertThat(copiedItem.getStoredObject().getId()).isNotEqualTo(sourceItem.getStoredObject().getId());
-        assertThat(copiedItem.getStoredObject().getFilePath()).isEqualTo(sourceItem.getStoredObject().getFilePath());
-        assertThat(copiedItem.getStoredObject().getFilename()).isNotEqualTo(sourceItem.getStoredObject().getFilename());
-        assertThat(Files.readAllBytes(storedObjectPath(copiedItem.getStoredObject()))).isEqualTo(jpeg);
+        assertThat(copiedItem.getStoredObject().getFilePath()).isNull();
+        assertThat(physicalPath(copiedItem)).isEqualTo(storageRoot().resolve(user.getId() + "/files/CopyTarget/IMG_1.jpg"));
+        assertThat(Files.readAllBytes(physicalPath(copiedItem))).isEqualTo(jpeg);
         assertThat(storageFileCount()).isEqualTo(storageFilesBeforeCopy + 1);
 
         // Байты копии независимы: удаление копии не затрагивает источник, его download работает.
+        Path copiedPath = physicalPath(copiedItem);
         perform(delete("/api/v1/files/{id}", copied.getId())
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
                 .andExpect(status().isNoContent());
-        assertThat(Files.exists(storedObjectPath(copiedItem.getStoredObject()))).isFalse();
+        assertThat(Files.exists(copiedPath)).isFalse();
         perform(get("/api/v1/files/{id}/download", source.getId())
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
                 .andExpect(status().isOk())
@@ -1070,7 +1074,7 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void copyOfFilesFileKeepsFilesDirectoryAndCreatesSeparateBytes() throws Exception {
+    void copyOfLibraryFileGoesIntoTargetFolderAndCreatesSeparateBytes() throws Exception {
         User user = createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
         Long copyTargetId = createFolder(token, getRootId(token), "CopyTarget").get("id").asLong();
@@ -1081,10 +1085,10 @@ class FileFlowIntegrationTest extends AbstractIntegrationTest {
         FileItem sourceItem = findFileItem(source.getId());
         FileItem copiedItem = findFileItem(copied.getId());
         assertThat(copiedItem.getStoredObject().getId()).isNotEqualTo(sourceItem.getStoredObject().getId());
-        assertThat(copiedItem.getStoredObject().getFilePath()).isEqualTo(user.getId() + "/files");
-        assertThat(copiedItem.getStoredObject().getFilename()).isNotEqualTo(sourceItem.getStoredObject().getFilename());
-        assertThat(Files.readAllBytes(storedObjectPath(copiedItem.getStoredObject()))).isEqualTo("notes".getBytes());
-        assertThat(Files.exists(storedObjectPath(sourceItem.getStoredObject()))).isTrue();
+        assertThat(copiedItem.getStoredObject().getFilePath()).isNull();
+        assertThat(physicalPath(copiedItem)).isEqualTo(storageRoot().resolve(user.getId() + "/files/CopyTarget/notes.txt"));
+        assertThat(Files.readAllBytes(physicalPath(copiedItem))).isEqualTo("notes".getBytes());
+        assertThat(Files.exists(physicalPath(sourceItem))).isTrue();
     }
 
     @Test

@@ -10,6 +10,7 @@ import ru.tbcarus.photocloudserver.service.storage.StorageKeyGenerator;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -21,27 +22,50 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Занятый физический путь — внутренняя ошибка хранилища: клиент получает 500 INTERNAL_ERROR,
- * а не 409 (Android считает его постоянной ошибкой) и не 401/403 из цепочки Security.
+ * Занятый физический путь никогда не заменяется. В библиотеке имя принадлежит пользователю, поэтому ответ 409.
+ * В Camera имя содержит UUID: коллизия — внутренняя ошибка хранилища, 500, а не 409 (Android считает его постоянной ошибкой).
  */
 class PhysicalStorageConflictIntegrationTest extends AbstractIntegrationTest {
 
     private static final String PASSWORD = "pass1";
+    private static final byte[] JPEG = {
+            (byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0x00, 0x10,
+            0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00,
+            0x00, 0x01, 0x00, 0x01, 0x00, 0x00, (byte) 0xFF, (byte) 0xD9
+    };
 
-    // Spy подменяет только имя файла: так совпадение физического пути воспроизводится детерминированно.
+    // Spy подменяет только имя файла Camera: так совпадение физического пути воспроизводится детерминированно.
     @MockitoSpyBean
     StorageKeyGenerator storageKeyGenerator;
 
     @Test
-    void uploadIntoOccupiedPhysicalPathReturnsInternalErrorAndKeepsExistingFile() throws Exception {
+    void uploadIntoOccupiedLibraryPathConflictsAndKeepsExistingFile() throws Exception {
         User user = createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
-        Path foreignFile = writeForeignFile(user.getId() + "/files/taken.txt");
-        doReturn("taken.txt").when(storageKeyGenerator).generateFilename(any(), any());
+        Path foreignFile = writeForeignFile(user.getId() + "/files/notes.txt");
 
         perform(multipart("/api/v1/files/upload")
                         .file(filePart("notes.txt", "text/plain", "notes".getBytes()))
                         .param("folderId", getRootId(token).toString())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"));
+
+        assertThat(Files.readString(foreignFile)).isEqualTo("foreign");
+        assertThat(fileItemRepository.findAll()).isEmpty();
+        assertThat(storedObjectRepository.findAll()).isEmpty();
+        assertThat(tempFileCount()).isZero();
+    }
+
+    @Test
+    void uploadIntoOccupiedCameraPathReturnsInternalErrorAndKeepsExistingFile() throws Exception {
+        User user = createUser("user1@test.local", PASSWORD);
+        String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
+        Path foreignFile = writeForeignFile(user.getId() + "/camera/" + LocalDateTime.now().getYear() + "/taken.jpg");
+        doReturn("taken.jpg").when(storageKeyGenerator).generateFilename(any(), any());
+
+        perform(multipart("/api/v1/files/upload")
+                        .file(filePart("IMG.jpg", "image/jpeg", JPEG))
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
@@ -54,13 +78,12 @@ class PhysicalStorageConflictIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void copyIntoOccupiedPhysicalPathReturnsInternalErrorAndKeepsExistingFile() throws Exception {
+    void copyIntoOccupiedLibraryPathConflictsAndKeepsExistingFile() throws Exception {
         User user = createUser("user1@test.local", PASSWORD);
         String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
         FileItem source = findFileItem(upload(token, "notes.txt", "text/plain", "notes".getBytes()).getId());
         Long targetFolderId = createUserFolder(token);
-        Path foreignFile = writeForeignFile(user.getId() + "/files/taken.txt");
-        doReturn("taken.txt").when(storageKeyGenerator).generateFilename(any(), any());
+        Path foreignFile = writeForeignFile(user.getId() + "/files/CopyTarget/notes.txt");
 
         perform(post("/api/v1/files/{id}/copy", source.getId())
                         .header(HttpHeaders.AUTHORIZATION, authHeader(token))
@@ -68,11 +91,11 @@ class PhysicalStorageConflictIntegrationTest extends AbstractIntegrationTest {
                         .content("""
                                 {"targetFolderId":%d}
                                 """.formatted(targetFolderId)))
-                .andExpect(status().isInternalServerError())
-                .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"));
 
         assertThat(Files.readString(foreignFile)).isEqualTo("foreign");
-        assertThat(Files.readAllBytes(storedObjectPath(source.getStoredObject()))).isEqualTo("notes".getBytes());
+        assertThat(Files.readAllBytes(physicalPath(source))).isEqualTo("notes".getBytes());
         assertThat(storedObjectRepository.findAll()).hasSize(1);
         assertThat(tempFileCount()).isZero();
     }

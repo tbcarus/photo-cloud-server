@@ -20,6 +20,8 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import ru.tbcarus.photocloudserver.service.FileItemService;
+import ru.tbcarus.photocloudserver.service.PendingDeleteCleaner;
+import ru.tbcarus.photocloudserver.service.storage.LibraryStorage;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.RequestBuilder;
@@ -34,7 +36,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import ru.tbcarus.photocloudserver.model.FileItem;
 import ru.tbcarus.photocloudserver.model.FileType;
 import ru.tbcarus.photocloudserver.model.Role;
-import ru.tbcarus.photocloudserver.model.StoredObject;
 import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.model.dto.LoginResponse;
 import ru.tbcarus.photocloudserver.repository.EmailRequestRepository;
@@ -101,6 +102,12 @@ public abstract class AbstractIntegrationTest {
 
     @Autowired
     protected JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    protected LibraryStorage libraryStorage;
+
+    @Autowired
+    protected PendingDeleteCleaner pendingDeleteCleaner;
 
     @DynamicPropertySource
     static void registerProperties(DynamicPropertyRegistry registry) {
@@ -232,18 +239,31 @@ public abstract class AbstractIntegrationTest {
     }
 
     protected void deletePhysicalFile(Long id) throws IOException {
-        Files.deleteIfExists(storedObjectPath(findFileItem(id).getStoredObject()));
+        Files.deleteIfExists(physicalPath(findFileItem(id)));
     }
 
     protected Path storageRoot() {
         return TEST_STORAGE;
     }
 
-    protected Path storedObjectPath(StoredObject storedObject) {
-        return TEST_STORAGE.resolve(storedObject.getFilePath()).resolve(storedObject.getFilename()).normalize();
+    protected Path physicalPath(FileItem file) {
+        return libraryStorage.physicalPath(file);
     }
 
-    // Считает только файлы данных: temp и маркеры владельца в корне {userId} не учитываются.
+    protected Path pendingDeleteDir() {
+        return TEST_STORAGE.resolve(".pending-delete");
+    }
+
+    protected long pendingDeleteCount() throws IOException {
+        if (!Files.exists(pendingDeleteDir())) {
+            return 0;
+        }
+        try (var stream = Files.list(pendingDeleteDir())) {
+            return stream.count();
+        }
+    }
+
+    // Считает только файлы данных: temp, служебный каталог удаления и маркеры владельца в корне {userId} не учитываются.
     protected long storageFileCount() throws IOException {
         if (!Files.exists(TEST_STORAGE)) {
             return 0;
@@ -252,6 +272,7 @@ public abstract class AbstractIntegrationTest {
             Path tempDir = TEST_STORAGE.resolve("tmp");
             return stream.filter(Files::isRegularFile)
                     .filter(path -> !path.startsWith(tempDir))
+                    .filter(path -> !path.startsWith(pendingDeleteDir()))
                     .filter(path -> !isOwnerMarker(path))
                     .count();
         }

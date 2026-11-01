@@ -2,7 +2,6 @@ package ru.tbcarus.photocloudserver.service.storage;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-import ru.tbcarus.photocloudserver.model.FolderType;
 
 import java.time.LocalDateTime;
 import java.util.Locale;
@@ -15,14 +14,14 @@ public class StorageKeyGenerator {
     private final FilenameSanitizer filenameSanitizer;
     private final StorageProperties storageProperties;
 
-    // Каталог определяется один раз при создании StoredObject и потом не меняется: move/rename логические.
-    // Раскладка files/ временная — окончательная организация ручной библиотеки ещё не выбрана.
-    public String generateFilePath(Long userId, FolderType targetFolderType, LocalDateTime capturedAt) {
-        String userRootPath = generateUserRootPath(userId);
-        if (targetFolderType == FolderType.CAMERA) {
-            return String.format(Locale.ROOT, "%s/camera/%04d", userRootPath, capturedAt.getYear());
-        }
-        return userRootPath + "/files";
+    // Физический ключ Camera определяется один раз при создании StoredObject и потом не меняется.
+    public String generateCameraPath(Long userId, LocalDateTime capturedAt) {
+        return String.format(Locale.ROOT, "%s/camera/%04d", generateUserRootPath(userId), capturedAt.getYear());
+    }
+
+    // Корень обычной библиотеки: соответствует ROOT, вложенные каталоги повторяют дерево Folder.
+    public String generateLibraryRootPath(Long userId) {
+        return generateUserRootPath(userId) + "/files";
     }
 
     // Корневой каталог пользователя: в нём лежат camera/, files/ и маркер владельца.

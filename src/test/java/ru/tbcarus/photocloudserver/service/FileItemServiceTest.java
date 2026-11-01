@@ -15,11 +15,13 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionSystemException;
 import org.springframework.transaction.support.SimpleTransactionStatus;
+import ru.tbcarus.photocloudserver.exception.FileConflictException;
 import ru.tbcarus.photocloudserver.model.*;
 import ru.tbcarus.photocloudserver.model.dto.CopyFileRequest;
 import ru.tbcarus.photocloudserver.model.dto.mapper.FileItemMapper;
 import ru.tbcarus.photocloudserver.model.dto.mapper.FileItemMapperImpl;
 import ru.tbcarus.photocloudserver.repository.FileItemRepository;
+import ru.tbcarus.photocloudserver.repository.FolderRepository;
 import ru.tbcarus.photocloudserver.repository.StoredObjectRepository;
 import ru.tbcarus.photocloudserver.service.metadata.ExtractedFileMetadata;
 import ru.tbcarus.photocloudserver.service.metadata.FileMetadataExtractor;
@@ -27,11 +29,11 @@ import ru.tbcarus.photocloudserver.service.storage.*;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -62,6 +64,9 @@ class FileItemServiceTest {
 
     @Mock
     FolderService folderService;
+
+    @Mock
+    FolderRepository folderRepository;
 
     @Mock
     FileMetadataExtractor fileMetadataExtractor;
@@ -154,21 +159,16 @@ class FileItemServiceTest {
     @Test
     void uploadDoesNotOverwriteOrDeleteOccupiedFinalFile() throws Exception {
         User user = user();
-        Path foreignFile = writeStorageFile("1/files/taken.txt", "foreign");
-        StorageKeyGenerator keyGenerator = mock(StorageKeyGenerator.class);
-        when(keyGenerator.generateFilePath(any(), any(), any())).thenReturn("1/files");
-        when(keyGenerator.generateFilename(any(), any())).thenReturn("taken.txt");
-        FileItemService service = newService(keyGenerator, new FileItemMapperImpl());
-
-        when(folderService.getFolderForUser(1L, user)).thenReturn(libraryFolder(user));
+        // Имя свободно в БД, но занято на диске: такой объект не присваивается и не заменяется.
+        Path foreignFile = writeStorageFile("1/files/note.txt", "foreign");
+        mockSuccessfulUploadPersistence(user);
 
         MockMultipartFile file = new MockMultipartFile("file", "note.txt", "text/plain", "content".getBytes());
-        assertThatThrownBy(() -> service.uploadFile(file, user, 1L)).isInstanceOf(FileAlreadyExistsException.class);
+        assertThatThrownBy(() -> fileItemService.uploadFile(file, user, 1L)).isInstanceOf(FileConflictException.class);
 
         assertThat(Files.readString(foreignFile)).isEqualTo("foreign");
         assertThat(tempFileCount()).isZero();
         assertThat(regularFileCount()).isEqualTo(1);
-        verifyNoInteractions(storedObjectRepository);
     }
 
     @Test
@@ -207,20 +207,19 @@ class FileItemServiceTest {
         User user = user();
         FileItem source = cameraSource(user);
         Path sourceFile = writeStorageFile("1/camera/2023/IMG_1.jpg_source.jpg", "source");
-        Path foreignFile = writeStorageFile("1/camera/2023/taken.jpg", "foreign");
-        StorageKeyGenerator keyGenerator = mock(StorageKeyGenerator.class);
-        when(keyGenerator.generateFilename(any(), any())).thenReturn("taken.jpg");
-        FileItemService service = newService(keyGenerator, new FileItemMapperImpl());
+        Path foreignFile = writeStorageFile("1/files/Trips/" + source.getOriginalName(), "foreign");
         mockCopyLookups(user, source);
+        when(folderRepository.findPathNames(2L)).thenReturn(List.of("Trips"));
+        when(storedObjectRepository.save(any(StoredObject.class))).thenAnswer(returnsFirstArg());
+        when(fileItemRepository.save(any(FileItem.class))).thenAnswer(returnsFirstArg());
 
-        assertThatThrownBy(() -> service.copyFileForCurrentUser(5L, new CopyFileRequest(2L, null), user))
-                .isInstanceOf(FileAlreadyExistsException.class);
+        assertThatThrownBy(() -> fileItemService.copyFileForCurrentUser(5L, new CopyFileRequest(2L, null), user))
+                .isInstanceOf(FileConflictException.class);
 
         assertThat(Files.readString(foreignFile)).isEqualTo("foreign");
         assertThat(Files.readString(sourceFile)).isEqualTo("source");
         assertThat(tempFileCount()).isZero();
         assertThat(regularFileCount()).isEqualTo(2);
-        verifyNoInteractions(storedObjectRepository);
     }
 
     @Test
@@ -305,6 +304,7 @@ class FileItemServiceTest {
                 fileItemMapper,
                 storageKeyGenerator,
                 new StoragePathResolver(storageProperties),
+                new LibraryStorage(folderRepository, new StoragePathResolver(storageProperties), storageKeyGenerator),
                 filenameSanitizer,
                 new FileContentDetector(),
                 storageProperties,

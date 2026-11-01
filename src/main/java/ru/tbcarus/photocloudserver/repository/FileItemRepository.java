@@ -4,6 +4,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 import ru.tbcarus.photocloudserver.model.FileItem;
@@ -50,7 +51,22 @@ public interface FileItemRepository extends JpaRepository<FileItem, Long> {
             """)
     Set<String> findExistingChecksumsInFolder(Long userId, Long folderId, Collection<String> checksums);
 
-    boolean existsByFolderId(Long folderId);
+    @Query("SELECT f.user.id FROM FileItem f WHERE f.id = :id")
+    Optional<Long> findOwnerId(Long id);
+
+    // Файлы поддерева и их StoredObject; метаданные удаляет ON DELETE CASCADE.
+    @Modifying
+    @Query(value = """
+            WITH RECURSIVE tree(id) AS (
+                SELECT CAST(:folderId AS bigint)
+                UNION ALL
+                SELECT f.id FROM folder f JOIN tree t ON f.parent_id = t.id
+            ), removed AS (
+                DELETE FROM file_item WHERE folder_id IN (SELECT id FROM tree) RETURNING stored_object_id
+            )
+            DELETE FROM stored_object WHERE id IN (SELECT stored_object_id FROM removed)
+            """, nativeQuery = true)
+    void deleteAllInFolderTree(Long folderId);
 
     // Только для обычной библиотеки: в Camera имена повторяются. Имена сравнивает одна функция PostgreSQL lower().
     @EntityGraph(attributePaths = {"folder", "folder.parent", "storedObject", "metadata"})

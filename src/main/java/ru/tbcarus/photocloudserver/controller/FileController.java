@@ -126,7 +126,7 @@ public class FileController {
                 .toString();
     }
 
-    // Переименовывает только FileItem.originalName; физическое имя в object storage не меняется.
+    // Переименовывает FileItem и физический файл библиотеки; в Camera физическое имя задано ключом и не меняется.
     @Operation(summary = "Rename file")
     @PatchMapping(FILE_ID_URL)
     public ResponseEntity<FileItemDto> renameFile(
@@ -136,7 +136,7 @@ public class FileController {
         return ResponseEntity.ok(fileItemService.renameFileForCurrentUser(id, request, user));
     }
 
-    // Перемещает логическую запись в другую папку без перемещения физического файла.
+    // Перемещает файл в другую папку вместе с физическим файлом.
     @Operation(summary = "Move file")
     @PostMapping(MOVE_URL)
     public ResponseEntity<FileItemDto> moveFile(
@@ -146,7 +146,7 @@ public class FileController {
         return ResponseEntity.ok(fileItemService.moveFileForCurrentUser(id, request, user));
     }
 
-    // Создаёт независимую физическую копию StoredObject и новый FileItem.
+    // Создаёт независимую физическую копию в дереве целевой папки и новые StoredObject и FileItem.
     @Operation(summary = "Copy file")
     @PostMapping(COPY_URL)
     public ResponseEntity<FileItemDto> copyFile(
@@ -156,7 +156,7 @@ public class FileController {
         return ResponseEntity.ok(fileItemService.copyFileForCurrentUser(id, request, user));
     }
 
-    // Удаляет FileItem; владелец StoredObject удаляет также все ссылки, StoredObject и физический файл.
+    // Удаляет FileItem; владелец StoredObject удаляет также все ссылки и StoredObject, байты убирает фоновая очистка.
     @Operation(summary = "Delete file")
     @DeleteMapping(FILE_ID_URL)
     public ResponseEntity<Void> deleteFile(@PathVariable Long id, @AuthenticationPrincipal User user) {

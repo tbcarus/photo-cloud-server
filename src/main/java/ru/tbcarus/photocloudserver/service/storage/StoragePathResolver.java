@@ -12,6 +12,17 @@ public class StoragePathResolver {
 
     private final StorageProperties storageProperties;
 
+    private static final String PENDING_DELETE_DIR = ".pending-delete";
+
+    public Path resolve(String directoryPath) {
+        Path rootPath = rootPath();
+        Path targetPath = rootPath.resolve(directoryPath).normalize();
+        if (!targetPath.startsWith(rootPath)) {
+            throw new IllegalArgumentException("Invalid storage path");
+        }
+        return targetPath;
+    }
+
     public Path resolve(String filePath, String filename) {
         Path rootPath = rootPath();
         Path targetPath = rootPath.resolve(filePath).resolve(filename).normalize();
@@ -33,7 +44,25 @@ public class StoragePathResolver {
         return targetPath;
     }
 
-    private Path rootPath() {
+    // Один компонент пути внутри уже вычисленного каталога библиотеки.
+    public Path resolveChild(Path directory, String name) {
+        Path targetPath = directory.resolve(name).normalize();
+        if (!targetPath.startsWith(rootPath()) || !directory.equals(targetPath.getParent())) {
+            throw new IllegalArgumentException("Invalid storage path");
+        }
+        return targetPath;
+    }
+
+    // Общий каталог хранилища: тот же том, что и данные пользователей, но вне их библиотек.
+    public Path resolvePendingDelete() {
+        return rootPath().resolve(PENDING_DELETE_DIR);
+    }
+
+    public Path resolvePendingDelete(String name) {
+        return resolveChild(resolvePendingDelete(), name);
+    }
+
+    public Path rootPath() {
         return Paths.get(storageProperties.getRoot()).toAbsolutePath().normalize();
     }
 }

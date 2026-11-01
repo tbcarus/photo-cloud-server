@@ -4,14 +4,12 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.mockito.Mockito;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import ru.tbcarus.photocloudserver.model.dto.FileItemDto;
 import ru.tbcarus.photocloudserver.service.metadata.FileMetadataExtractor;
 import ru.tbcarus.photocloudserver.service.storage.FileContentDetector;
 import ru.tbcarus.photocloudserver.service.storage.FilenameSanitizer;
-import ru.tbcarus.photocloudserver.service.storage.StorageKeyGenerator;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -45,9 +43,6 @@ class LibraryAcceptanceFailureIntegrationTest extends LibraryAcceptanceSupport {
 
     @MockitoSpyBean
     FilenameSanitizer filenameSanitizer;
-
-    @MockitoSpyBean
-    StorageKeyGenerator storageKeyGenerator;
 
     @AfterEach
     void dropTriggers() {
@@ -316,18 +311,17 @@ class LibraryAcceptanceFailureIntegrationTest extends LibraryAcceptanceSupport {
             loaded.countDown();
             deleted.await(10, TimeUnit.SECONDS);
             return invocation.callRealMethod();
-        }).when(storageKeyGenerator).generateFilename("b.txt", "text/plain");
+        }).when(filenameSanitizer).validateLibraryName("b.txt");
 
         Future<Integer> copy = statusOf(jsonCall(post("/api/v1/files/{id}/copy", file.getId()), copyBody(rootId, "b.txt")));
         assertThat(loaded.await(10, TimeUnit.SECONDS)).isTrue();
         assertThat(jsonCall(delete("/api/v1/files/{id}", file.getId()), null).call().getStatus()).isEqualTo(204);
         deleted.countDown();
 
-        // SPEC FILES-COPY: отсутствующие физические байты источника дают 500 INTERNAL_ERROR.
-        assertThat(copy.get(20, TimeUnit.SECONDS)).isEqualTo(500);
+        // Источник удалён параллельно: клиент получает 404, а не внутреннюю ошибку.
+        assertThat(copy.get(20, TimeUnit.SECONDS)).isEqualTo(404);
         assertThat(fileItemRepository.findAll()).isEmpty();
         assertLibraryConsistent();
-        Mockito.reset(storageKeyGenerator);
     }
 
     private Future<Integer> statusOf(java.util.concurrent.Callable<MockHttpServletResponse> call) {

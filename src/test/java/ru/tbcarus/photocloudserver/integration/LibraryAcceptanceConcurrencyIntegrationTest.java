@@ -64,7 +64,7 @@ class LibraryAcceptanceConcurrencyIntegrationTest extends LibraryAcceptanceSuppo
         assertLibraryConsistent();
     }
 
-    // Подтверждает смысл очереди: оба запроса прошли проверку до блокировки и оба уже опубликовали байты.
+    // Подтверждает смысл очереди: оба запроса прошли проверку до блокировки, но байты публикуются только под ней.
     @RepeatedTest(10)
     void queuedUploadsHavePassedPrecheckAndPublishedBytes() throws Exception {
         Long rootId = getRootId(token);
@@ -75,8 +75,8 @@ class LibraryAcceptanceConcurrencyIntegrationTest extends LibraryAcceptanceSuppo
             futures.add(executor.submit(uploadCall("a.txt", "second".getBytes(), rootId)));
             awaitWaiting(2);
 
-            assertThat(physicalFiles()).hasSize(2);
-            assertThat(fileItemRepository.findAll()).isEmpty();
+            assertThat(tempFileCount()).isEqualTo(2);
+            assertThat(physicalFiles()).isEmpty();
             gate.commit();
 
             assertThat(statuses(results(futures))).containsExactly(200, 409);
@@ -521,6 +521,61 @@ class LibraryAcceptanceConcurrencyIntegrationTest extends LibraryAcceptanceSuppo
         }
         assertThat(fileItemRepository.findAll()).isEmpty();
         assertThat(physicalFiles()).isEmpty();
+        assertLibraryConsistent();
+    }
+
+    // Запрос уже принял файл и ждёт блокировку: путь вычисляется после переименования родителя.
+    @RepeatedTest(10)
+    void folderRenameBeforeQueuedUploadIntoChild() throws Exception {
+        Long rootId = getRootId(token);
+        Long parent = createFolder(token, rootId, "Parent").get("id").asLong();
+        Long child = createFolder(token, parent, "Child").get("id").asLong();
+        try (RowGate gate = holdRoot(rootId)) {
+            List<MockHttpServletResponse> responses = runQueued(gate, List.of(
+                    jsonCall(patch("/api/v1/folders/{id}", parent), Map.of("name", "Renamed")),
+                    uploadCall("a.txt", "x".getBytes(), child)));
+
+            assertThat(statuses(responses)).containsExactly(200, 200);
+        }
+        assertThat(storageRoot().resolve(userId + "/files/Renamed/Child/a.txt")).exists();
+        assertLibraryConsistent();
+    }
+
+    @RepeatedTest(10)
+    void folderMoveAfterQueuedUploadIntoChild() throws Exception {
+        Long rootId = getRootId(token);
+        Long parent = createFolder(token, rootId, "Parent").get("id").asLong();
+        Long child = createFolder(token, parent, "Child").get("id").asLong();
+        Long target = createFolder(token, rootId, "Target").get("id").asLong();
+        try (RowGate gate = holdRoot(rootId)) {
+            List<MockHttpServletResponse> responses = runQueued(gate, List.of(
+                    uploadCall("a.txt", "x".getBytes(), child),
+                    jsonCall(post("/api/v1/folders/{id}/move", parent), Map.of("targetParentId", target))));
+
+            assertThat(statuses(responses)).containsExactly(200, 200);
+        }
+        assertThat(storageRoot().resolve(userId + "/files/Target/Parent/Child/a.txt")).exists();
+        assertLibraryConsistent();
+    }
+
+    @RepeatedTest(10)
+    void folderDeleteBeforeQueuedOperationsInside() throws Exception {
+        Long rootId = getRootId(token);
+        Long parent = createFolder(token, rootId, "Parent").get("id").asLong();
+        Long child = createFolder(token, parent, "Child").get("id").asLong();
+        FileItemDto file = upload(token, "a.txt", "text/plain", "x".getBytes(), child);
+        try (RowGate gate = holdRoot(rootId)) {
+            List<MockHttpServletResponse> responses = runQueued(gate, List.of(
+                    jsonCall(delete("/api/v1/folders/{id}", parent), null),
+                    uploadCall("b.txt", "y".getBytes(), child),
+                    jsonCall(patch("/api/v1/files/{id}", file.getId()), Map.of("originalName", "c.txt")),
+                    jsonCall(post("/api/v1/folders"), Map.of("parentId", child, "name", "New"))));
+
+            assertThat(statuses(responses)).containsExactly(204, 404, 404, 404);
+        }
+        assertThat(tempFileCount()).isZero();
+        pendingDeleteCleaner.clean();
+        assertThat(pendingDeleteCount()).isZero();
         assertLibraryConsistent();
     }
 

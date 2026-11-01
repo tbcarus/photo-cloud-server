@@ -185,37 +185,20 @@ class FolderApiIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void deleteOnlyEmptyUserFolder() throws Exception {
+    void deleteUserFolderRemovesItsContent() throws Exception {
         User user = createUser("delete-empty@test.local", PASSWORD);
         String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
         Long rootId = getRootId(token);
         Long parentId = createFolder(token, rootId, "Parent").get("id").asLong();
-        createFolder(token, parentId, "Child");
+        Long childId = createFolder(token, parentId, "Child").get("id").asLong();
+        upload(token, "file.txt", "text/plain", "content".getBytes(), childId);
 
         perform(delete("/api/v1/folders/{id}", parentId).header(HttpHeaders.AUTHORIZATION, authHeader(token)))
-                .andExpect(status().isBadRequest());
-
-        Long folderWithFileId = createFolder(token, rootId, "With file").get("id").asLong();
-        FileItemDto uploaded = upload(token, "seed.jpg", "image/jpeg", jpegBytes());
-        FileItem seed = findFileItem(uploaded.getId());
-        Folder folderWithFile = folderRepository.findById(folderWithFileId).orElseThrow();
-        fileItemRepository.save(FileItem.builder()
-                .user(user)
-                .folder(folderWithFile)
-                .storedObject(seed.getStoredObject())
-                .checksum(seed.getStoredObject().getChecksum())
-                .originalName("logical-copy.jpg")
-                .capturedAt(LocalDateTime.now())
-                .uploadedAt(LocalDateTime.now())
-                .build());
-
-        perform(delete("/api/v1/folders/{id}", folderWithFileId).header(HttpHeaders.AUTHORIZATION, authHeader(token)))
-                .andExpect(status().isBadRequest());
-
-        Long emptyId = createFolder(token, rootId, "Empty").get("id").asLong();
-        perform(delete("/api/v1/folders/{id}", emptyId).header(HttpHeaders.AUTHORIZATION, authHeader(token)))
                 .andExpect(status().isNoContent());
-        assertThat(folderRepository.findById(emptyId)).isEmpty();
+
+        assertThat(folderRepository.findById(parentId)).isEmpty();
+        assertThat(folderRepository.findById(childId)).isEmpty();
+        assertThat(fileItemRepository.findAll()).isEmpty();
     }
 
     @Test

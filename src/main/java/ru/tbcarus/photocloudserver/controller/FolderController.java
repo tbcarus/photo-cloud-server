@@ -93,7 +93,7 @@ public class FolderController {
         return ResponseEntity.ok(folderMapper.toDto(folderService.moveFolder(user, id, request.targetParentId())));
     }
 
-    // Удаляет только пустую USER-папку; рекурсивное удаление намеренно не выполняется.
+    // Удаляет USER-папку со всем содержимым; байты убирает фоновая очистка.
     @Operation(summary = "Delete folder")
     @DeleteMapping(FOLDER_ID_URL)
     public ResponseEntity<Void> deleteFolder(@PathVariable Long id, @AuthenticationPrincipal User user) {

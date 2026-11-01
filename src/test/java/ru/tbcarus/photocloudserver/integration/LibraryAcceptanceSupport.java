@@ -7,7 +7,6 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
-import ru.tbcarus.photocloudserver.model.StoredObject;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -202,11 +201,9 @@ abstract class LibraryAcceptanceSupport extends AbstractIntegrationTest {
     }
 
     private Set<Path> storedFiles() {
-        return storedObjectRepository.findAll().stream().map(this::physicalPath).collect(Collectors.toSet());
-    }
-
-    private Path physicalPath(StoredObject storedObject) {
-        return storedObjectPath(storedObject);
+        return fileItemRepository.findAll().stream()
+                .map(file -> physicalPath(findFileItem(file.getId())))
+                .collect(Collectors.toSet());
     }
 
     protected Set<Path> physicalFiles() throws IOException {
@@ -214,6 +211,7 @@ abstract class LibraryAcceptanceSupport extends AbstractIntegrationTest {
         try (var stream = Files.walk(storageRoot())) {
             return stream.filter(Files::isRegularFile)
                     .filter(path -> !path.startsWith(tempDir))
+                    .filter(path -> !path.startsWith(pendingDeleteDir()))
                     .filter(path -> storageRoot().relativize(path).getNameCount() > 2)
                     .map(Path::normalize)
                     .collect(Collectors.toSet());

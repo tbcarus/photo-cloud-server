@@ -16,6 +16,7 @@ import ru.tbcarus.photocloudserver.exception.dto.ErrorCode;
 import ru.tbcarus.photocloudserver.exception.dto.ErrorResponse;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -175,6 +176,12 @@ public class GlobalExceptionHandler {
         log.error("Ошибка операции с физическим хранилищем", e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(error(ErrorCode.INTERNAL_ERROR, "Physical storage operation failed"));
+    }
+
+    // Файловая операция внутри транзакции передаёт IOException в обёртке: иначе исключение ушло бы в /error и стало 401.
+    @ExceptionHandler(UncheckedIOException.class)
+    public ResponseEntity<ErrorResponse> handleUncheckedIoException(UncheckedIOException e) {
+        return handleIoException(e.getCause());
     }
 
     @ExceptionHandler(DataIntegrityViolationException.class)

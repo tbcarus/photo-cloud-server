@@ -18,6 +18,9 @@ token:
   signing:
     key: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZg==
 
+storage:
+  pending-delete-interval: PT1H # тесты запускают очистку сами
+
 logging:
   level:
     liquibase: warn

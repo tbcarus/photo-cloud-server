@@ -1,10 +1,13 @@
 package ru.tbcarus.photocloudserver.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import ru.tbcarus.photocloudserver.exception.FileConflictException;
 import ru.tbcarus.photocloudserver.exception.FolderConflictException;
 import ru.tbcarus.photocloudserver.exception.FolderNotFoundException;
@@ -16,12 +19,20 @@ import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.repository.FileItemRepository;
 import ru.tbcarus.photocloudserver.repository.FolderRepository;
 import ru.tbcarus.photocloudserver.service.storage.FilenameSanitizer;
+import ru.tbcarus.photocloudserver.service.storage.LibraryStorage;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class FolderService {
 
     private static final String ROOT_FOLDER_NAME = "root";
@@ -30,6 +41,8 @@ public class FolderService {
     private final FolderRepository folderRepository;
     private final FileItemRepository fileItemRepository;
     private final FilenameSanitizer filenameSanitizer;
+    private final LibraryStorage libraryStorage;
+    private final PlatformTransactionManager transactionManager;
 
     // Единственный маршрут без явной папки: подходящее медиа идёт в Camera, для обычных файлов папку выбирает клиент.
     @Transactional
@@ -100,96 +113,156 @@ public class FolderService {
         return folderRepository.findChildrenByUserIdAndParentId(user.getId(), parent.getId());
     }
 
-    @Transactional
     public Folder createFolder(User user, Long parentId, String name) {
         filenameSanitizer.validateLibraryName(name);
-        lockUserTree(user);
-        Folder parent = parentId == null ? getOrCreateRoot(user) : getFolderForUser(parentId, user);
-
-        // Инвариант: системная CAMERA является листом для пользовательских папок.
-        if (isCamera(parent)) {
-            throw new FolderOperationException("Cannot create folder inside " + parent.getFolderType());
-        }
-        ensureNameAvailable(user, parent, name, null, null);
-
+        AtomicReference<Path> created = new AtomicReference<>();
+        AtomicReference<Long> createdId = new AtomicReference<>();
         try {
-            return folderRepository.saveAndFlush(Folder.builder()
-                    .user(user)
-                    .parent(parent)
-                    .name(name)
-                    .folderType(FolderType.USER)
-                    .build());
+            return transaction().execute(status -> {
+                lockUserTree(user);
+                Folder parent = parentId == null ? getOrCreateRoot(user) : getFolderForUser(parentId, user);
+
+                // Инвариант: системная CAMERA является листом для пользовательских папок.
+                if (isCamera(parent)) {
+                    throw new FolderOperationException("Cannot create folder inside " + parent.getFolderType());
+                }
+                ensureNameAvailable(user, parent, name, null, null);
+
+                Folder folder = saveFolder(Folder.builder()
+                        .user(user)
+                        .parent(parent)
+                        .name(name)
+                        .folderType(FolderType.USER)
+                        .build(), "Folder with this name already exists in parent folder");
+                libraryStorage.createLibraryRoot(user.getId());
+                Path path = libraryStorage.folderPath(folder);
+                libraryStorage.createDirectory(path);
+                created.set(path);
+                createdId.set(folder.getId());
+                return folder;
+            });
+        } catch (RuntimeException ex) {
+            removeCreatedDirectory(created.get(), createdId.get());
+            throw ex;
+        }
+    }
+
+    public Folder renameFolder(User user, Long folderId, String name) {
+        return moveInTree(user, folderId, folder -> {
+            // Системные папки имеют стабильные имена, на них завязаны default-folder правила upload.
+            ensureUserFolder(folder, "Cannot rename system folder");
+            filenameSanitizer.validateLibraryName(name);
+            ensureNameAvailable(user, folder.getParent(), name, null, folder.getId());
+            folder.setName(name);
+        }, "Folder with this name already exists in parent folder");
+    }
+
+    public Folder moveFolder(User user, Long folderId, Long targetParentId) {
+        return moveInTree(user, folderId, folder -> {
+            Folder targetParent = getFolderForUser(targetParentId, user);
+
+            // Перемещать можно только USER-папки: ROOT/CAMERA фиксируют базовую структуру пользователя.
+            ensureUserFolder(folder, "Cannot move system folder");
+            if (Objects.equals(folder.getId(), targetParent.getId())) {
+                throw new FolderOperationException("Cannot move folder into itself");
+            }
+            if (isCamera(targetParent)) {
+                throw new FolderOperationException("Cannot move folder into " + targetParent.getFolderType());
+            }
+            ensureNotDescendant(folder, targetParent);
+            ensureNameAvailable(user, targetParent, folder.getName(), null, folder.getId());
+            folder.setParent(targetParent);
+        }, "Folder with this name already exists in target folder");
+    }
+
+    // Переносится только верхний каталог: пути потомков вычисляются из дерева и остаются верными.
+    private Folder moveInTree(User user, Long folderId, Consumer<Folder> change, String conflictMessage) {
+        AtomicReference<Path> source = new AtomicReference<>();
+        AtomicReference<Path> target = new AtomicReference<>();
+        try {
+            return transaction().execute(status -> {
+                lockUserTree(user);
+                Folder folder = getFolderForUser(folderId, user);
+                Path from = libraryStorage.folderPath(folder);
+                change.accept(folder);
+                Folder saved = saveFolder(folder, conflictMessage);
+                Path to = libraryStorage.folderPath(saved);
+                libraryStorage.move(from, to);
+                source.set(from);
+                target.set(to);
+                return saved;
+            });
+        } catch (RuntimeException ex) {
+            undoMoveIfRolledBack(user, source.get(), target.get(),
+                    () -> libraryStorage.folderPath(getFolderForUser(folderId, user)));
+            throw ex;
+        }
+    }
+
+    // Ошибка COMMIT не говорит об исходе: перенос возвращается, только если БД достоверно сохранила прежний путь.
+    public void undoMoveIfRolledBack(User user, Path source, Path target, Supplier<Path> currentPath) {
+        if (source == null) {
+            return;
+        }
+        try {
+            transaction().executeWithoutResult(status -> {
+                lockUserTree(user);
+                if (source.toString().equals(currentPath.get().toString())) {
+                    libraryStorage.move(target, source);
+                }
+            });
+        } catch (RuntimeException ex) {
+            log.error("Не удалось вернуть {} в {} после сбоя фиксации: нужно сверить БД и диск", target, source, ex);
+        }
+    }
+
+    public void deleteFolder(User user, Long folderId) {
+        transaction().executeWithoutResult(status -> {
+            lockUserTree(user);
+            Folder folder = getFolderForUser(folderId, user);
+
+            // TODO: При появлении sharing удалять только доступы не владельца, а чужие StoredObject не затрагивать.
+            ensureUserFolder(folder, "Cannot delete system folder");
+            Path source = libraryStorage.folderPath(folder);
+            deleteTreeRecords(folderId);
+            // Содержимое не перебирается: переносится верхний каталог, очистку завершает PendingDeleteCleaner.
+            libraryStorage.moveToPendingDelete("folder", folderId, source);
+        });
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void deleteTreeRecords(Long folderId) {
+        // Сначала файлы: у file_item.folder_id нет каскада.
+        fileItemRepository.deleteAllInFolderTree(folderId);
+        folderRepository.deleteTree(folderId);
+    }
+
+    private Folder saveFolder(Folder folder, String conflictMessage) {
+        try {
+            return folderRepository.saveAndFlush(folder);
         } catch (DataIntegrityViolationException ex) {
             // Инвариант дублируется в БД, чтобы параллельные запросы не создали две папки с одним именем.
-            throw new FolderConflictException("Folder with this name already exists in parent folder");
+            throw new FolderConflictException(conflictMessage);
         }
     }
 
-    @Transactional
-    public Folder renameFolder(User user, Long folderId, String name) {
-        lockUserTree(user);
-        Folder folder = getFolderForUser(folderId, user);
-
-        // Системные папки имеют стабильные имена, на них завязаны default-folder правила upload.
-        ensureUserFolder(folder, "Cannot rename system folder");
-        filenameSanitizer.validateLibraryName(name);
-        ensureNameAvailable(user, folder.getParent(), name, null, folder.getId());
-
-        folder.setName(name);
+    // Ошибка COMMIT не говорит об исходе: каталог убирается, только если новая транзакция не нашла запись папки.
+    private void removeCreatedDirectory(Path path, Long folderId) {
+        if (path == null) {
+            return;
+        }
         try {
-            return folderRepository.saveAndFlush(folder);
-        } catch (DataIntegrityViolationException ex) {
-            throw new FolderConflictException("Folder with this name already exists in parent folder");
+            if (!Boolean.TRUE.equals(transaction().execute(status -> folderRepository.existsById(folderId)))) {
+                // Каталог создан этой операцией и пуст: удаление без рекурсии не затронет чужое содержимое.
+                Files.deleteIfExists(path);
+            }
+        } catch (RuntimeException | IOException ex) {
+            log.error("Каталог {} сохранён: исход создания папки {} не определён, нужно сверить БД и диск", path, folderId, ex);
         }
     }
 
-    @Transactional
-    public Folder moveFolder(User user, Long folderId, Long targetParentId) {
-        lockUserTree(user);
-        Folder folder = getFolderForUser(folderId, user);
-        Folder targetParent = getFolderForUser(targetParentId, user);
-
-        // Перемещать можно только USER-папки: ROOT/CAMERA фиксируют базовую структуру пользователя.
-        ensureUserFolder(folder, "Cannot move system folder");
-        if (Objects.equals(folder.getId(), targetParent.getId())) {
-            throw new FolderOperationException("Cannot move folder into itself");
-        }
-        if (isCamera(targetParent)) {
-            throw new FolderOperationException("Cannot move folder into " + targetParent.getFolderType());
-        }
-        ensureNotDescendant(folder, targetParent);
-        ensureNameAvailable(user, targetParent, folder.getName(), null, folder.getId());
-
-        folder.setParent(targetParent);
-        try {
-            return folderRepository.saveAndFlush(folder);
-        } catch (DataIntegrityViolationException ex) {
-            throw new FolderConflictException("Folder with this name already exists in target folder");
-        }
-    }
-
-    @Transactional
-    public void deleteFolder(User user, Long folderId) {
-        lockUserTree(user);
-        Folder folder = getFolderForUser(folderId, user);
-
-        // TODO: В будущем реализовать рекурсивное удаление с учётом шаринга.
-        // Если удаляет владелец:
-        //   - удалить все дочерние папки
-        //   - удалить все FileItem
-        //   - удалить физические файлы (StoredObject)
-        // Если удаляет не владелец:
-        //   - удалить только его FileItem/доступы
-        //   - не удалять StoredObject
-        ensureUserFolder(folder, "Cannot delete system folder");
-        if (folderRepository.existsByParentId(folder.getId())) {
-            throw new FolderOperationException("Cannot delete folder with child folders");
-        }
-        if (fileItemRepository.existsByFolderId(folder.getId())) {
-            throw new FolderOperationException("Cannot delete folder with files");
-        }
-
-        folderRepository.delete(folder);
+    private TransactionTemplate transaction() {
+        return new TransactionTemplate(transactionManager);
     }
 
     @Transactional(readOnly = true)

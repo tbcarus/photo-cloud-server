@@ -42,5 +42,22 @@ public interface FolderRepository extends JpaRepository<Folder, Long> {
     @Query("SELECT count(f) > 0 FROM Folder f WHERE f.user.id = :userId AND f.parent.id = :parentId AND lower(f.name) = lower(:name)")
     boolean existsByUserIdAndParentIdAndName(Long userId, Long parentId, String name);
 
-    boolean existsByParentId(Long parentId);
+    @Query("SELECT f.user.id FROM Folder f WHERE f.id = :id")
+    Optional<Long> findOwnerId(Long id);
+
+    // Имена от верхней папки к заданной; ROOT соответствует корню библиотеки и в путь не входит.
+    @Query(value = """
+            WITH RECURSIVE chain(id, parent_id, name, depth) AS (
+                SELECT id, parent_id, name, 0 FROM folder WHERE id = :folderId
+                UNION ALL
+                SELECT f.id, f.parent_id, f.name, c.depth + 1 FROM folder f JOIN chain c ON f.id = c.parent_id
+            )
+            SELECT name FROM chain WHERE parent_id IS NOT NULL ORDER BY depth DESC
+            """, nativeQuery = true)
+    List<String> findPathNames(Long folderId);
+
+    // Вложенные папки удаляет ON DELETE CASCADE.
+    @Modifying
+    @Query(value = "DELETE FROM folder WHERE id = :folderId", nativeQuery = true)
+    void deleteTree(Long folderId);
 }

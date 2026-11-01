@@ -29,13 +29,14 @@ public class StoredObject {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(name = "file_path", nullable = false, length = 1024)
+    // Физический ключ Camera; у файла библиотеки путь вычисляется из дерева Folder, поэтому здесь null.
+    @Column(name = "file_path", length = 1024)
     private String filePath;
 
-    @Column(nullable = false, length = 255)
+    @Column(length = 255)
     private String filename;
 
-    @Column(name = "file_extension", nullable = false, length = 20)
+    @Column(name = "file_extension", length = 20)
     private String fileExtension;
 
     @Column(nullable = false, length = 64)
