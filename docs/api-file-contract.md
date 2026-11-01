@@ -97,11 +97,18 @@ TODO: server-side copy без повторной передачи байтов �
 
 ## Endpoints
 
-### `GET /api/v1/files?folderId=...&page=0&size=10`
+### `GET /api/v1/files?folderId=...&page=0&size=10&sort=name`
 
 Возвращает страницу файлов текущего пользователя. Если `folderId` передан, возвращаются только прямые файлы этой папки.
 
-Сортировка в коде: `capturedAt desc`, `uploadedAt desc`, `id desc`.
+Необязательный параметр `sort`:
+
+| Значение | Порядок |
+| --- | --- |
+| не передан | `capturedAt desc`, `uploadedAt desc`, `id desc` |
+| `name` | `lower(originalName COLLATE "ru-x-icu")` по возрастанию, затем `id asc` |
+
+Сортирует PostgreSQL до применения LIMIT/OFFSET. Порядок при `sort=name` не зависит от локали БД: регистр не учитывается, кириллица идёт по алфавиту и раньше латиницы, `Ё` сортируется как вариант `Е`. Для работы нужны collation `ru-x-icu` (PostgreSQL собран с ICU) и кодировка БД, отличная от `SQL_ASCII`. Другое значение `sort`, в том числе пустое, даёт `400 BAD_REQUEST`.
 
 Response `200 OK`:
 

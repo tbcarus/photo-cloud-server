@@ -84,6 +84,8 @@ Response `200 OK`: `FolderDto` с `folderType = CAMERA`, `name = Camera`, `paren
 
 Возвращает только прямых потомков папки. Рекурсивное дерево не возвращается.
 
+Порядок: `lower(name COLLATE "ru-x-icu")` по возрастанию, затем `id asc`. Правила и требования к БД те же, что у `sort=name` в `GET /api/v1/files`.
+
 Response `200 OK`:
 
 ```json

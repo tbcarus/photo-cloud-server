@@ -33,7 +33,9 @@ public interface FolderRepository extends JpaRepository<Folder, Long> {
 
     Optional<Folder> findByIdAndUserId(Long id, Long userId);
 
-    @Query("SELECT f FROM Folder f WHERE f.user.id = :userId AND f.parent.id = :parentId ORDER BY lower(f.name), f.id")
+    // Тот же порядок, что у файлов при sort=name: не зависит от локали БД.
+    @Query("SELECT f FROM Folder f WHERE f.user.id = :userId AND f.parent.id = :parentId "
+            + "ORDER BY sql('lower(? collate \"ru-x-icu\")', f.name), f.id")
     List<Folder> findChildrenByUserIdAndParentId(Long userId, Long parentId);
 
     @Query("SELECT f FROM Folder f WHERE f.user.id = :userId AND f.parent.id = :parentId AND lower(f.name) = lower(:name)")

@@ -18,10 +18,13 @@ import java.util.Set;
 @Repository
 public interface FileItemRepository extends JpaRepository<FileItem, Long> {
 
+    // Явный JPQL: выражение сортировки по имени с COLLATE не поддерживается производными запросами.
     @EntityGraph(attributePaths = {"folder", "folder.parent", "storedObject", "metadata"})
+    @Query("SELECT f FROM FileItem f WHERE f.user.id = :userId")
     Page<FileItem> findAllByUserId(Long userId, Pageable pageable);
 
     @EntityGraph(attributePaths = {"folder", "folder.parent", "storedObject", "metadata"})
+    @Query("SELECT f FROM FileItem f WHERE f.user.id = :userId AND f.folder.id = :folderId")
     Page<FileItem> findAllByUserIdAndFolderId(Long userId, Long folderId, Pageable pageable);
 
     @EntityGraph(attributePaths = {"folder", "folder.parent", "storedObject", "metadata"})

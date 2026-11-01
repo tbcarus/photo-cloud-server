@@ -9,6 +9,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.JpaSort;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -47,6 +48,8 @@ public class FileController {
     public static final String COPY_URL = FILE_ID_URL + "/copy";
     public static final String CHECKSUMS_URL = "/checksums";
     public static final String CHECKSUMS_EXISTS_URL = CHECKSUMS_URL + "/exists";
+    private static final String SORT_BY_NAME = "name";
+    private static final String SORT_NAME_EXPRESSION = "sql('lower(? collate \"ru-x-icu\")', f.originalName)";
 
     private final FileItemService fileItemService;
     private final ChecksumSyncService checksumSyncService;
@@ -78,13 +81,9 @@ public class FileController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) Long folderId,
+            @RequestParam(required = false) String sort,
             @AuthenticationPrincipal User user) {
-        Sort sort = Sort.by(
-                Sort.Order.desc("capturedAt"),
-                Sort.Order.desc("uploadedAt"),
-                Sort.Order.desc("id")
-        );
-        Pageable pageable = PageRequest.of(page, size, sort);
+        Pageable pageable = PageRequest.of(page, size, resolveFilesSort(sort));
         Page<FileItemDto> files = fileItemService.getUserFiles(pageable, user, folderId);
         return PageResponse.<FileItemDto>builder()
                 .items(files.getContent())
@@ -95,6 +94,22 @@ public class FileController {
                 .hasNext(files.hasNext())
                 .hasPrevious(files.hasPrevious())
                 .build();
+    }
+
+    // Порядок применяет PostgreSQL до LIMIT/OFFSET; id делает порядок страниц однозначным.
+    private Sort resolveFilesSort(String sort) {
+        if (sort == null) {
+            return Sort.by(
+                    Sort.Order.desc("capturedAt"),
+                    Sort.Order.desc("uploadedAt"),
+                    Sort.Order.desc("id")
+            );
+        }
+        if (SORT_BY_NAME.equals(sort)) {
+            // COLLATE внутри lower(): регистр и алфавит не зависят от локали БД.
+            return JpaSort.unsafe(Sort.Direction.ASC, SORT_NAME_EXPRESSION).and(Sort.by(Sort.Order.asc("id")));
+        }
+        throw new IllegalArgumentException("Unsupported sort value");
     }
 
     // Возвращает логическую карточку файла без раскрытия физических путей StoredObject.
