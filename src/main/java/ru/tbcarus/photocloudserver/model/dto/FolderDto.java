@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 import ru.tbcarus.photocloudserver.model.FolderType;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Data
 @NoArgsConstructor
@@ -17,6 +18,7 @@ public class FolderDto {
     private Long parentId;
     private String name;
     private FolderType folderType;
+    private UUID backupSource;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

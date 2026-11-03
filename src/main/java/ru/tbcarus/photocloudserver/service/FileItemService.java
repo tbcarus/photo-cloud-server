@@ -207,6 +207,7 @@ public class FileItemService {
     public FileItemDto moveFileForCurrentUser(Long fileId, MoveFileRequest request, User user) {
         return moveInTree(fileId, user, file -> {
             Folder targetFolder = folderService.getFolderForUser(request.targetFolderId(), user);
+            folderService.ensureCanHoldFiles(targetFolder);
             if (isCamera(file.getFolder()) != isCamera(targetFolder)) {
                 throw new IllegalArgumentException("Cannot move file between Camera and library folders");
             }
@@ -336,7 +337,9 @@ public class FileItemService {
         if (folderId == null) {
             return folderService.getDefaultFolder(user, fileType);
         }
-        return folderService.getFolderForUser(folderId, user);
+        Folder folder = folderService.getFolderForUser(folderId, user);
+        folderService.ensureCanHoldFiles(folder);
+        return folder;
     }
 
     private boolean isCamera(Folder folder) {
@@ -374,6 +377,7 @@ public class FileItemService {
 
     // Копирование в Camera запрещено: внутри неё копия была бы дублем checksum, из библиотеки граница закрыта.
     private void ensureCopyAllowed(FileItem sourceFile, Folder targetFolder) {
+        folderService.ensureCanHoldFiles(targetFolder);
         if (!isCamera(targetFolder)) {
             return;
         }

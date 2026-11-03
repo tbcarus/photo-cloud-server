@@ -24,8 +24,11 @@ import ru.tbcarus.photocloudserver.service.storage.LibraryStorage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -37,6 +40,7 @@ public class FolderService {
 
     private static final String ROOT_FOLDER_NAME = "root";
     private static final String CAMERA_FOLDER_NAME = "Camera";
+    private static final String AUTO_UPLOADS_FOLDER_NAME = "AutoUploads";
 
     private final FolderRepository folderRepository;
     private final FileItemRepository fileItemRepository;
@@ -122,8 +126,8 @@ public class FolderService {
                 lockUserTree(user);
                 Folder parent = parentId == null ? getOrCreateRoot(user) : getFolderForUser(parentId, user);
 
-                // Инвариант: системная CAMERA является листом для пользовательских папок.
-                if (isCamera(parent)) {
+                // Инвариант: в CAMERA нет пользовательских папок, в AutoUploads — ничего, кроме корней источников.
+                if (isCamera(parent) || isAutoUploads(parent)) {
                     throw new FolderOperationException("Cannot create folder inside " + parent.getFolderType());
                 }
                 ensureNameAvailable(user, parent, name, null, null);
@@ -147,6 +151,75 @@ public class FolderService {
         }
     }
 
+    // Идемпотентно по sourceUuid: повтор после потерянного ответа получает ту же папку, другое имя — конфликт.
+    public Folder createBackupSource(User user, String name, UUID sourceUuid) {
+        filenameSanitizer.validateLibraryName(name);
+        List<CreatedDirectory> created = new ArrayList<>();
+        try {
+            return transaction().execute(status -> {
+                lockUserTree(user);
+                Optional<Folder> registered = folderRepository.findByUserIdAndBackupSource(user.getId(), sourceUuid);
+                if (registered.isPresent()) {
+                    if (!registered.get().getName().equals(name)) {
+                        throw new FolderConflictException("Backup source is registered with another name");
+                    }
+                    return registered.get();
+                }
+
+                Folder container = getOrCreateAutoUploads(user, created);
+                ensureNameAvailable(user, container, name, null, null);
+                Folder source = saveFolder(Folder.builder()
+                        .user(user)
+                        .parent(container)
+                        .name(name)
+                        .folderType(FolderType.USER)
+                        .backupSource(sourceUuid)
+                        .build(), "Folder with this name already exists in parent folder");
+                createDirectory(source, created);
+                return source;
+            });
+        } catch (RuntimeException ex) {
+            // Сначала каталог источника: после него каталог AutoUploads, созданный этой же операцией, пуст.
+            for (int i = created.size() - 1; i >= 0; i--) {
+                removeCreatedDirectory(created.get(i).path(), created.get(i).folderId());
+            }
+            throw ex;
+        }
+    }
+
+    // Вызывается под lockUserTree. Пользовательская папка AutoUploads не становится системной: её имя даёт 409.
+    private Folder getOrCreateAutoUploads(User user, List<CreatedDirectory> created) {
+        Folder root = getOrCreateRoot(user);
+        Optional<Folder> existing = folderRepository.findByUserIdAndParentIdAndFolderType(
+                user.getId(), root.getId(), FolderType.AUTO_UPLOADS);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        ensureNameAvailable(user, root, AUTO_UPLOADS_FOLDER_NAME, null, null);
+        Folder container = saveFolder(Folder.builder()
+                .user(user)
+                .parent(root)
+                .name(AUTO_UPLOADS_FOLDER_NAME)
+                .folderType(FolderType.AUTO_UPLOADS)
+                .build(), "Folder with this name already exists in parent folder");
+        createDirectory(container, created);
+        return container;
+    }
+
+    private void createDirectory(Folder folder, List<CreatedDirectory> created) {
+        libraryStorage.createLibraryRoot(folder.getUser().getId());
+        Path path = libraryStorage.folderPath(folder);
+        libraryStorage.createDirectory(path);
+        created.add(new CreatedDirectory(path, folder.getId()));
+    }
+
+    // AutoUploads содержит только корни источников: файлы в нём самом не размещаются.
+    public void ensureCanHoldFiles(Folder folder) {
+        if (isAutoUploads(folder)) {
+            throw new FolderOperationException("Cannot place files inside " + folder.getFolderType());
+        }
+    }
+
     public Folder renameFolder(User user, Long folderId, String name) {
         return moveInTree(user, folderId, folder -> {
             // Системные папки имеют стабильные имена, на них завязаны default-folder правила upload.
@@ -166,8 +239,12 @@ public class FolderService {
             if (Objects.equals(folder.getId(), targetParent.getId())) {
                 throw new FolderOperationException("Cannot move folder into itself");
             }
-            if (isCamera(targetParent)) {
+            if (isCamera(targetParent) || isAutoUploads(targetParent)) {
                 throw new FolderOperationException("Cannot move folder into " + targetParent.getFolderType());
+            }
+            // Корень источника остаётся прямым потомком AutoUploads; остальную защиту дерева добавит этап 5.1б.
+            if (folder.getBackupSource() != null) {
+                throw new FolderOperationException("Cannot move backup source folder");
             }
             ensureNotDescendant(folder, targetParent);
             ensureNameAvailable(user, targetParent, folder.getName(), null, folder.getId());
@@ -290,5 +367,12 @@ public class FolderService {
 
     private boolean isCamera(Folder folder) {
         return folder.getFolderType() == FolderType.CAMERA;
+    }
+
+    private boolean isAutoUploads(Folder folder) {
+        return folder.getFolderType() == FolderType.AUTO_UPLOADS;
+    }
+
+    private record CreatedDirectory(Path path, Long folderId) {
     }
 }

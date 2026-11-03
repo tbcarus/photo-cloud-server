@@ -11,6 +11,7 @@ import ru.tbcarus.photocloudserver.model.FolderType;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Repository
 public interface FolderRepository extends JpaRepository<Folder, Long> {
@@ -32,6 +33,8 @@ public interface FolderRepository extends JpaRepository<Folder, Long> {
     void insertRootIfAbsent(Long userId, String name);
 
     Optional<Folder> findByIdAndUserId(Long id, Long userId);
+
+    Optional<Folder> findByUserIdAndBackupSource(Long userId, UUID backupSource);
 
     // Тот же порядок, что у файлов при sort=name: не зависит от локали БД.
     @Query("SELECT f FROM Folder f WHERE f.user.id = :userId AND f.parent.id = :parentId "

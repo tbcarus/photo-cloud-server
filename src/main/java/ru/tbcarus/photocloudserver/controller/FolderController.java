@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import ru.tbcarus.photocloudserver.model.User;
+import ru.tbcarus.photocloudserver.model.dto.CreateBackupSourceRequest;
 import ru.tbcarus.photocloudserver.model.dto.CreateFolderRequest;
 import ru.tbcarus.photocloudserver.model.dto.FolderDto;
 import ru.tbcarus.photocloudserver.model.dto.MoveFolderRequest;
@@ -33,6 +34,7 @@ public class FolderController {
     public static final String BASE_URL = ApiPaths.API_V1 + "/folders";
     public static final String ROOT_URL = "/root";
     public static final String CAMERA_URL = "/camera";
+    public static final String BACKUP_URL = "/backup";
     public static final String CHILDREN_URL = "/{id}/children";
     public static final String FOLDER_ID_URL = "/{id}";
     public static final String MOVE_URL = FOLDER_ID_URL + "/move";
@@ -53,6 +55,16 @@ public class FolderController {
     @PostMapping(CAMERA_URL)
     public ResponseEntity<FolderDto> getOrCreateCamera(@AuthenticationPrincipal User user) {
         return ResponseEntity.ok(folderMapper.toDto(folderService.getOrCreateCamera(user)));
+    }
+
+    // Регистрирует автоматический источник Android: его корень создаётся в AutoUploads, повтор с тем же UUID — та же папка.
+    @Operation(summary = "Register automatic backup source")
+    @PostMapping(BACKUP_URL)
+    public ResponseEntity<FolderDto> createBackupSource(
+            @Valid @RequestBody CreateBackupSourceRequest request,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(folderMapper.toDto(
+                folderService.createBackupSource(user, request.name(), request.sourceUuid())));
     }
 
     // Возвращает только прямых потомков папки, без рекурсивного дерева.

@@ -6,6 +6,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(
@@ -39,6 +40,10 @@ public class Folder {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private FolderType folderType;
+
+    // Идентификатор автоматического источника Android; только у корня источника, прямого потомка AutoUploads.
+    @Column(name = "backup_source")
+    private UUID backupSource;
 
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
