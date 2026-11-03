@@ -11,6 +11,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import ru.tbcarus.photocloudserver.exception.dto.ErrorCode;
 import ru.tbcarus.photocloudserver.exception.dto.ErrorResponse;
@@ -150,6 +151,12 @@ public class GlobalExceptionHandler {
                 .body(error(ErrorCode.CONFLICT, e.getMessage()));
     }
 
+    @ExceptionHandler(ManagedFolderException.class)
+    public ResponseEntity<ErrorResponse> handleManagedFolder(ManagedFolderException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(error(ErrorCode.FOLDER_MANAGED, e.getMessage()));
+    }
+
     @ExceptionHandler(FolderOperationException.class)
     public ResponseEntity<ErrorResponse> handleFolderOperation(FolderOperationException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
@@ -206,6 +213,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleMissingServletRequestParameterException(MissingServletRequestParameterException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(error(ErrorCode.BAD_REQUEST, "Required request parameter is missing"));
+    }
+
+    // Например, backupSource multipart-запроса не является UUID.
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleMethodArgumentTypeMismatchException(MethodArgumentTypeMismatchException e) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(error(ErrorCode.BAD_REQUEST, "Invalid value of request parameter " + e.getName()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

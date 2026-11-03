@@ -33,6 +33,7 @@ import ru.tbcarus.photocloudserver.service.sync.ChecksumSyncService;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequiredArgsConstructor
@@ -60,8 +61,9 @@ public class FileController {
     public ResponseEntity<FileItemDto> uploadFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "folderId", required = false) Long folderId,
+            @RequestParam(value = "backupSource", required = false) UUID backupSource,
             @AuthenticationPrincipal User user) throws IOException {
-        return ResponseEntity.ok(fileItemService.uploadFile(file, user, folderId));
+        return ResponseEntity.ok(fileItemService.uploadFile(file, user, folderId, backupSource));
     }
 
     // Явный upload endpoint делает новый контракт заметным, но использует тот же pipeline.
@@ -70,8 +72,9 @@ public class FileController {
     public ResponseEntity<FileItemDto> uploadFileExplicit(
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "folderId", required = false) Long folderId,
+            @RequestParam(value = "backupSource", required = false) UUID backupSource,
             @AuthenticationPrincipal User user) throws IOException {
-        return ResponseEntity.ok(fileItemService.uploadFile(file, user, folderId));
+        return ResponseEntity.ok(fileItemService.uploadFile(file, user, folderId, backupSource));
     }
 
     // Возвращает файлы пользователя; при folderId список ограничен только прямыми файлами этой папки.

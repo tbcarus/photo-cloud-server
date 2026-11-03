@@ -56,6 +56,7 @@ import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -83,6 +84,15 @@ public class FileItemService {
     }
 
     public FileItemDto uploadFile(MultipartFile file, User user, Long folderId) throws IOException {
+        return uploadFile(file, user, folderId, null);
+    }
+
+    // backupSource отличает загрузку механизма резервирования: только она пишет в дерево активного источника.
+    public FileItemDto uploadFile(MultipartFile file, User user, Long folderId, UUID backupSource) throws IOException {
+        // Загрузка резервирования всегда адресна: default routing создал бы Camera до отказа.
+        if (backupSource != null && folderId == null) {
+            throw new IllegalArgumentException("folderId is required with backupSource");
+        }
         if (file.isEmpty()) {
             throw new IllegalArgumentException("Файл пустой");
         }
@@ -102,7 +112,7 @@ public class FileItemService {
             ExtractedFileMetadata extractedMetadata = fileMetadataExtractor.extract(tempFile, detectedMimeType);
             LocalDateTime uploadedAt = LocalDateTime.now();
             LocalDateTime capturedAt = extractedMetadata.getCapturedAt() == null ? uploadedAt : extractedMetadata.getCapturedAt();
-            Folder folder = resolveTargetFolder(user, folderId, fileType);
+            Folder folder = resolveTargetFolder(user, folderId, fileType, backupSource);
             String originalName = uploadName(folder, file.getOriginalFilename());
 
             // Повтор той же загрузки идемпотентен: не создаём ни новый StoredObject, ни новый FileItem.
@@ -134,7 +144,8 @@ public class FileItemService {
                         size,
                         detectedMimeType,
                         fileType,
-                        tempFile
+                        tempFile,
+                        backupSource
                 );
             } catch (UploadRaceLostException ex) {
                 // Параллельный upload того же файла зафиксирован первым: свои байты ещё не опубликованы.
@@ -192,6 +203,8 @@ public class FileItemService {
         return moveInTree(fileId, user, file -> {
             // Изменяем managed-сущность в одной транзакции: save() detached-объекта через merge вернул бы копию
             // с неинициализированным proxy StoredObject, и маппинг после закрытия сессии упал бы с LazyInitializationException.
+            // Механизм резервирования переименовывает файл своего источника при архивировании прежней версии.
+            folderService.ensureWritable(file.getFolder(), request.backupSource());
             String originalName;
             if (isCamera(file.getFolder())) {
                 originalName = normalizeOriginalName(request.originalName());
@@ -208,6 +221,9 @@ public class FileItemService {
         return moveInTree(fileId, user, file -> {
             Folder targetFolder = folderService.getFolderForUser(request.targetFolderId(), user);
             folderService.ensureCanHoldFiles(targetFolder);
+            // Move из активного дерева, внутри него и в него запрещён и для механизма резервирования.
+            folderService.ensureNotManaged(file.getFolder());
+            folderService.ensureNotManaged(targetFolder);
             if (isCamera(file.getFolder()) != isCamera(targetFolder)) {
                 throw new IllegalArgumentException("Cannot move file between Camera and library folders");
             }
@@ -256,6 +272,9 @@ public class FileItemService {
                 ? sourceFile.getFolder()
                 : folderService.getFolderForUser(request.targetFolderId(), user);
         ensureCopyAllowed(sourceFile, targetFolder);
+        // Copy из активного дерева и в него запрещён; цель повторно проверяется под блокировкой.
+        folderService.ensureNotManaged(sourceFile.getFolder());
+        folderService.ensureNotManaged(targetFolder);
         String originalName = copyName(request.originalName(), sourceFile.getOriginalName());
 
         // Конфликт виден ещё до копирования байтов; строгая проверка повторяется под блокировкой при сохранении.
@@ -304,6 +323,7 @@ public class FileItemService {
         transactionTemplate.executeWithoutResult(status -> {
             folderService.lockUserTree(user);
             FileItem file = getFileForCurrentUser(fileId, user);
+            folderService.ensureNotManaged(file.getFolder());
             StoredObject storedObject = file.getStoredObject();
 
             if (!file.getUser().getId().equals(storedObject.getUser().getId())) {
@@ -333,12 +353,16 @@ public class FileItemService {
         return fileItemRepository.findAllChecksumsAndOriginalFilenamesByUserId(userId);
     }
 
-    private Folder resolveTargetFolder(User user, Long folderId, FileType fileType) {
+    private Folder resolveTargetFolder(User user, Long folderId, FileType fileType, UUID backupSource) {
+        Folder folder;
         if (folderId == null) {
-            return folderService.getDefaultFolder(user, fileType);
+            folder = folderService.getDefaultFolder(user, fileType);
+        } else {
+            folder = folderService.getFolderForUser(folderId, user);
+            folderService.ensureCanHoldFiles(folder);
         }
-        Folder folder = folderService.getFolderForUser(folderId, user);
-        folderService.ensureCanHoldFiles(folder);
+        // Ранний отказ до работы с байтами; строгая проверка повторяется под блокировкой при сохранении.
+        folderService.ensureWritable(folder, backupSource);
         return folder;
     }
 
@@ -490,11 +514,13 @@ public class FileItemService {
                                                    long size,
                                                    String detectedMimeType,
                                                    FileType fileType,
-                                                   Path tempFile) {
+                                                   Path tempFile,
+                                                   UUID backupSource) {
         return new TransactionTemplate(transactionManager).execute(status -> {
             folderService.lockUserTree(user);
-            // Под блокировкой: папку могли удалить или перенести, а имя или checksum занять после проверки до неё.
-            folderService.getFolderForUser(folder.getId(), user);
+            // Под блокировкой: папку могли удалить или перенести, а имя или checksum занять после проверки до неё,
+            // а источник — отключить: тогда загрузка резервирования получает 409 и байты не публикуются.
+            folderService.ensureWritable(folderService.getFolderForUser(folder.getId(), user), backupSource);
             findUploadedFile(user, folder, originalName, checksum).ifPresent(existingFile -> {
                 throw new UploadRaceLostException(existingFile);
             });
@@ -549,7 +575,7 @@ public class FileItemService {
                                                          Path tempFile) {
         return new TransactionTemplate(transactionManager).execute(status -> {
             folderService.lockUserTree(user);
-            folderService.getFolderForUser(folder.getId(), user);
+            folderService.ensureNotManaged(folderService.getFolderForUser(folder.getId(), user));
             folderService.ensureNameAvailable(user, folder, originalName, null, null);
             StoredObject copiedStoredObject = storedObjectRepository.save(StoredObject.builder()
                     .user(user)

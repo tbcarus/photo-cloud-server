@@ -12,6 +12,7 @@ import ru.tbcarus.photocloudserver.exception.FileConflictException;
 import ru.tbcarus.photocloudserver.exception.FolderConflictException;
 import ru.tbcarus.photocloudserver.exception.FolderNotFoundException;
 import ru.tbcarus.photocloudserver.exception.FolderOperationException;
+import ru.tbcarus.photocloudserver.exception.ManagedFolderException;
 import ru.tbcarus.photocloudserver.model.FileType;
 import ru.tbcarus.photocloudserver.model.Folder;
 import ru.tbcarus.photocloudserver.model.FolderType;
@@ -118,6 +119,10 @@ public class FolderService {
     }
 
     public Folder createFolder(User user, Long parentId, String name) {
+        return createFolder(user, parentId, name, null);
+    }
+
+    public Folder createFolder(User user, Long parentId, String name, UUID backupSource) {
         filenameSanitizer.validateLibraryName(name);
         AtomicReference<Path> created = new AtomicReference<>();
         AtomicReference<Long> createdId = new AtomicReference<>();
@@ -130,6 +135,7 @@ public class FolderService {
                 if (isCamera(parent) || isAutoUploads(parent)) {
                     throw new FolderOperationException("Cannot create folder inside " + parent.getFolderType());
                 }
+                ensureWritable(parent, backupSource);
                 ensureNameAvailable(user, parent, name, null, null);
 
                 Folder folder = saveFolder(Folder.builder()
@@ -213,6 +219,45 @@ public class FolderService {
         created.add(new CreatedDirectory(path, folder.getId()));
     }
 
+    // Отключение снимает защиту дерева: папка и её содержимое остаются на месте обычной USER-папкой.
+    // Под той же блокировкой, что и запись в дерево: начатая операция резервирования завершается до отключения либо получает 409.
+    public void disableBackupSource(User user, Long folderId) {
+        transaction().executeWithoutResult(status -> {
+            lockUserTree(user);
+            Folder folder = getFolderForUser(folderId, user);
+            if (folder.getFolderType() != FolderType.USER || folder.getParent() == null || !isAutoUploads(folder.getParent())) {
+                throw new FolderOperationException("Folder is not a backup source root");
+            }
+            if (folder.getBackupSource() != null) {
+                folder.setBackupSource(null);
+                folderRepository.saveAndFlush(folder);
+            }
+        });
+    }
+
+    // Запись в папку: обычная операция допустима вне активного дерева, операция резервирования — только
+    // в дереве своего источника. Строгая проверка — под lockUserTree до изменения записей; вне её — ранний отказ.
+    public void ensureWritable(Folder folder, UUID backupSource) {
+        Optional<UUID> active = activeBackupSource(folder);
+        if (backupSource == null && active.isPresent()) {
+            throw new ManagedFolderException("Folder belongs to an active backup source");
+        }
+        if (backupSource != null && !active.map(backupSource::equals).orElse(false)) {
+            throw new ManagedFolderException("Folder is not in the tree of this active backup source");
+        }
+    }
+
+    // Удаление, move и copy в активном дереве запрещены и для механизма резервирования.
+    public void ensureNotManaged(Folder folder) {
+        if (activeBackupSource(folder).isPresent()) {
+            throw new ManagedFolderException("Folder belongs to an active backup source");
+        }
+    }
+
+    private Optional<UUID> activeBackupSource(Folder folder) {
+        return folderRepository.findActiveBackupSource(folder.getId()).map(UUID::fromString);
+    }
+
     // AutoUploads содержит только корни источников: файлы в нём самом не размещаются.
     public void ensureCanHoldFiles(Folder folder) {
         if (isAutoUploads(folder)) {
@@ -221,9 +266,18 @@ public class FolderService {
     }
 
     public Folder renameFolder(User user, Long folderId, String name) {
+        return renameFolder(user, folderId, name, null);
+    }
+
+    public Folder renameFolder(User user, Long folderId, String name, UUID backupSource) {
         return moveInTree(user, folderId, folder -> {
             // Системные папки имеют стабильные имена, на них завязаны default-folder правила upload.
             ensureUserFolder(folder, "Cannot rename system folder");
+            // Имя корня активного источника задано регистрацией: его не меняет и механизм резервирования.
+            if (folder.getBackupSource() != null) {
+                throw new ManagedFolderException("Cannot rename root of an active backup source");
+            }
+            ensureWritable(folder, backupSource);
             filenameSanitizer.validateLibraryName(name);
             ensureNameAvailable(user, folder.getParent(), name, null, folder.getId());
             folder.setName(name);
@@ -242,10 +296,9 @@ public class FolderService {
             if (isCamera(targetParent) || isAutoUploads(targetParent)) {
                 throw new FolderOperationException("Cannot move folder into " + targetParent.getFolderType());
             }
-            // Корень источника остаётся прямым потомком AutoUploads; остальную защиту дерева добавит этап 5.1б.
-            if (folder.getBackupSource() != null) {
-                throw new FolderOperationException("Cannot move backup source folder");
-            }
+            // Корень активного источника остаётся прямым потомком AutoUploads; отключённый можно перенести.
+            ensureNotManaged(folder);
+            ensureNotManaged(targetParent);
             ensureNotDescendant(folder, targetParent);
             ensureNameAvailable(user, targetParent, folder.getName(), null, folder.getId());
             folder.setParent(targetParent);
@@ -300,6 +353,7 @@ public class FolderService {
 
             // TODO: При появлении sharing удалять только доступы не владельца, а чужие StoredObject не затрагивать.
             ensureUserFolder(folder, "Cannot delete system folder");
+            ensureNotManaged(folder);
             Path source = libraryStorage.folderPath(folder);
             deleteTreeRecords(folderId);
             // Содержимое не перебирается: переносится верхний каталог, очистку завершает PendingDeleteCleaner.

@@ -337,7 +337,8 @@ class AutoUploadsIntegrationTest extends AbstractIntegrationTest {
                 .header(HttpHeaders.AUTHORIZATION, authHeader(token))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"targetParentId\":%d}".formatted(albumsId)))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("FOLDER_MANAGED"));
 
         assertThat(getChildren(token, containerId)).extracting(child -> child.get("id").asLong()).containsExactly(sourceId);
         assertThat(fileItemRepository.findAll()).hasSize(1);
@@ -375,10 +376,23 @@ class AutoUploadsIntegrationTest extends AbstractIntegrationTest {
     void nestedFoldersAndFilesOfSourceUseOrdinaryLibraryRules() throws Exception {
         User user = createUser("nested@test.local", PASSWORD);
         String token = loginAndGetAccessToken(user.getEmail(), PASSWORD);
-        Long sourceId = register(token, "Documents", UUID.randomUUID()).get("id").asLong();
+        UUID uuid = UUID.randomUUID();
+        Long sourceId = register(token, "Documents", uuid).get("id").asLong();
 
-        JsonNode nested = createFolder(token, sourceId, "Чертежи");
-        FileItemDto file = upload(token, "plan.txt", "text/plain", "plan".getBytes(), nested.get("id").asLong());
+        // С этапа 5.1б дерево активного источника меняет только механизм резервирования с его UUID.
+        JsonNode nested = objectMapper.readTree(perform(post("/api/v1/folders")
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"parentId\":%d,\"name\":\"Чертежи\",\"backupSource\":\"%s\"}".formatted(sourceId, uuid)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString());
+        FileItemDto file = objectMapper.readValue(perform(multipart("/api/v1/files")
+                        .file(filePart("plan.txt", "text/plain", "plan".getBytes()))
+                        .param("folderId", nested.get("id").asText())
+                        .param("backupSource", uuid.toString())
+                        .header(HttpHeaders.AUTHORIZATION, authHeader(token)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(), FileItemDto.class);
 
         assertThat(nested.get("folderType").asText()).isEqualTo("USER");
         assertThat(nested.get("backupSource").isNull()).isTrue();

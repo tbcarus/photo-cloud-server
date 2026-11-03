@@ -38,6 +38,7 @@ public class FolderController {
     public static final String CHILDREN_URL = "/{id}/children";
     public static final String FOLDER_ID_URL = "/{id}";
     public static final String MOVE_URL = FOLDER_ID_URL + "/move";
+    public static final String SOURCE_BACKUP_URL = FOLDER_ID_URL + "/backup";
 
     private final FolderService folderService;
     private final FolderMapper folderMapper;
@@ -82,7 +83,7 @@ public class FolderController {
     public ResponseEntity<FolderDto> createFolder(
             @Valid @RequestBody CreateFolderRequest request,
             @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(folderMapper.toDto(folderService.createFolder(user, request.parentId(), request.name())));
+        return ResponseEntity.ok(folderMapper.toDto(folderService.createFolder(user, request.parentId(), request.name(), request.backupSource())));
     }
 
     // Переименовывает только USER-папку; системные папки сохраняют стабильные имена.
@@ -92,7 +93,7 @@ public class FolderController {
             @PathVariable Long id,
             @Valid @RequestBody RenameFolderRequest request,
             @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(folderMapper.toDto(folderService.renameFolder(user, id, request.name())));
+        return ResponseEntity.ok(folderMapper.toDto(folderService.renameFolder(user, id, request.name(), request.backupSource())));
     }
 
     // Перемещает USER-папку и проверяет, что дерево не превращается в цикл.
@@ -103,6 +104,14 @@ public class FolderController {
             @Valid @RequestBody MoveFolderRequest request,
             @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(folderMapper.toDto(folderService.moveFolder(user, id, request.targetParentId())));
+    }
+
+    // Отключает автоматический источник: снимает защиту дерева, папку и файлы не меняет. Повтор успешен без изменений.
+    @Operation(summary = "Disable automatic backup source")
+    @DeleteMapping(SOURCE_BACKUP_URL)
+    public ResponseEntity<Void> disableBackupSource(@PathVariable Long id, @AuthenticationPrincipal User user) {
+        folderService.disableBackupSource(user, id);
+        return ResponseEntity.noContent().build();
     }
 
     // Удаляет USER-папку со всем содержимым; байты убирает фоновая очистка.

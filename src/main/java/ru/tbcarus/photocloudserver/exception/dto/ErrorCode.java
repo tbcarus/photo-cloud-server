@@ -7,6 +7,7 @@ public enum ErrorCode {
     BAD_REQUEST,
     NOT_FOUND,
     CONFLICT,
+    FOLDER_MANAGED,
     TOO_MANY_REQUESTS,
     EMAIL_NOT_SENT,
     INVALID_CREDENTIALS,

@@ -61,6 +61,17 @@ public interface FolderRepository extends JpaRepository<Folder, Long> {
             """, nativeQuery = true)
     List<String> findPathNames(Long folderId);
 
+    // Маркер активного источника ищется у самой папки и её предков: на вложенных объектах он не дублируется.
+    @Query(value = """
+            WITH RECURSIVE chain(id, parent_id, backup_source) AS (
+                SELECT id, parent_id, backup_source FROM folder WHERE id = :folderId
+                UNION ALL
+                SELECT f.id, f.parent_id, f.backup_source FROM folder f JOIN chain c ON f.id = c.parent_id
+            )
+            SELECT CAST(backup_source AS varchar) FROM chain WHERE backup_source IS NOT NULL LIMIT 1
+            """, nativeQuery = true)
+    Optional<String> findActiveBackupSource(Long folderId);
+
     // Вложенные папки удаляет ON DELETE CASCADE.
     @Modifying
     @Query(value = "DELETE FROM folder WHERE id = :folderId", nativeQuery = true)
