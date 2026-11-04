@@ -66,6 +66,13 @@ sync:
   checksum-exists:
     max-batch-size: 500
 
+thumbnail:
+  max-side: 320 # px, длинная сторона миниатюры; меньшие изображения не увеличиваются
+  max-source-pixels: 100000000 # предел ширина×высота исходника
+  max-full-decode-pixels: 8000000 # предел для WebP lossless и с прозрачностью: декодер выделяет память под полный кадр
+  max-concurrent: 4 # одновременных генераций; сверх лимита — 503 без ожидания
+  cache-max-age: PT24H # Cache-Control: private, max-age
+
 logging:
   level:
     liquibase: info

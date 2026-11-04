@@ -181,6 +181,40 @@ Response `200 OK`:
 
 Если `FileItem` не найден, чужой, либо физический файл отсутствует/не читается: `404`.
 
+### `GET /api/v1/files/{id}/thumbnail`
+
+JPEG-миниатюра изображения. Создаётся при запросе, на Server не сохраняется. Query-параметров нет.
+
+Request headers:
+
+- `Authorization: Bearer <accessToken>` — обязателен;
+- `If-None-Match` — необязателен: ETag из прежнего ответа (допускается `W/` и список).
+
+Порядок обработки: владелец (как у download) → формат по `StoredObject.detectedMimeType` → сравнение ETag → генерация.
+
+Response `200 OK`:
+
+- body: JPEG, длинная сторона не больше `thumbnail.max-side` (320 px), пропорции сохранены, меньшие изображения не увеличиваются; учтена EXIF Orientation 1–8; прозрачность заменена белым фоном; метаданных исходника (EXIF, GPS) нет;
+- `Content-Type: image/jpeg`;
+- `ETag: "<32 hex>"` — непрозрачное значение от checksum содержимого, версии алгоритма и `thumbnail.max-side`;
+- `Cache-Control: max-age=86400, private` (`thumbnail.cache-max-age`); `Pragma`/`Expires` не отправляются.
+
+Response `304 Not Modified`: `If-None-Match` содержит текущий ETag. Тела нет, оригинал не читается; `ETag` и `Cache-Control` те же. `If-None-Match: *` совпадением не считается.
+
+Поддерживаемые MIME: `image/jpeg`, `image/png`, `image/webp` (кроме анимированного).
+
+| Status | Code | Когда |
+| --- | --- | --- |
+| 401 | — | нет/невалидный access token |
+| 404 | `FILE_ITEM_NOT_FOUND` | `FileItem` не найден, чужой (в том числе при совпадающем `If-None-Match`), physical file отсутствует |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | другой MIME (HEIC/HEIF, AVIF, GIF, видео, PDF и т. п.), анимированный WebP |
+| 422 | `IMAGE_UNREADABLE` | изображение повреждено или не декодируется, нулевые размеры |
+| 422 | `IMAGE_TOO_LARGE` | ширина×высота больше `thumbnail.max-source-pixels`; для WebP lossless или с прозрачностью — больше `thumbnail.max-full-decode-pixels` |
+| 503 | `SERVICE_BUSY` | заняты все `thumbnail.max-concurrent` слота генерации; `Retry-After: 1`, очереди нет |
+| 500 | `INTERNAL_ERROR` | ошибка чтения хранилища |
+
+Ошибки — JSON `ErrorResponse` с `Content-Type: application/json`, в том числе при `Accept: image/*`.
+
 ### `PATCH /api/v1/files/{id}`
 
 Переименовывает файл. В `ROOT`/`USER` вместе с записью меняется физическое имя, в том числе при смене только регистра; в `CAMERA` физический файл не меняется. ID сохраняется.
@@ -297,10 +331,13 @@ Response `200 OK`:
 | --- | --- |
 | 400 | validation error, malformed body, empty file, слишком большой batch в checksum exists, illegal argument |
 | 401 | нет/невалидный access token |
-| 404 | файл/папка не найдены или принадлежат другому пользователю; physical file отсутствует при download |
+| 404 | файл/папка не найдены или принадлежат другому пользователю; physical file отсутствует при download/thumbnail. JSON и при `Accept: image/*` |
 | 409 | имя занято файлом или папкой, имя зарезервировано |
 | 413 | multipart/request или streamed file превышает лимит |
+| 415 | thumbnail: формат не поддерживается |
+| 422 | thumbnail: изображение не декодируется или превышает пределы |
 | 500 | `INTERNAL_ERROR`: ошибка физического хранилища (в том числе занятый физический путь); временная ошибка, запрос можно повторить. Физические конфликты намеренно не возвращают 409 |
+| 503 | thumbnail: все слоты генерации заняты, `Retry-After: 1` |
 
 ## TODO
 

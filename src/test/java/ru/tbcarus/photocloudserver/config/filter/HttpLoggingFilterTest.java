@@ -102,6 +102,24 @@ class HttpLoggingFilterTest {
     }
 
     @Test
+    void thumbnailWritesStraightToResponseWithoutLoggingBody(CapturedOutput output) throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/files/42/thumbnail");
+        request.addHeader("Authorization", "Bearer secret-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, (req, res) -> {
+            assertThat(res).isSameAs(response).isNotInstanceOf(ContentCachingResponseWrapper.class);
+            res.setContentType(MediaType.IMAGE_JPEG_VALUE);
+            res.getOutputStream().write(FILE_BYTES);
+        });
+
+        assertThat(response.getContentAsByteArray()).isEqualTo(FILE_BYTES);
+        assertThat(output).contains(">>> GET /api/v1/files/42/thumbnail | body: [binary]");
+        assertThat(output).containsPattern("<<< 200 \\| \\d+ ms \\| body: \\[binary]");
+        assertThat(output).doesNotContain("secret-token");
+    }
+
+    @Test
     void downloadUnderContextPathIsAlsoNotCached() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/app/api/v1/files/7/download");
         request.setContextPath("/app");

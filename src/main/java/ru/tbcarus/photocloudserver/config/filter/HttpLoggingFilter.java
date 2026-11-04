@@ -28,6 +28,7 @@ public class HttpLoggingFilter extends OncePerRequestFilter {
 
     private static final int MAX_BODY_LENGTH = 1000;
     private static final String DOWNLOAD_PATTERN = FileController.BASE_URL + FileController.DOWNLOAD_URL;
+    private static final String THUMBNAIL_PATTERN = FileController.BASE_URL + FileController.THUMBNAIL_URL;
     private static final PathMatcher PATH_MATCHER = new AntPathMatcher();
 
     private static final String RESET  = "\033[0m";
@@ -41,7 +42,7 @@ public class HttpLoggingFilter extends OncePerRequestFilter {
                                     @NonNull FilterChain filterChain) throws ServletException, IOException {
 
         if (isBinaryExchange(request)) {
-            // Тела upload/download не оборачиваются: ContentCaching*Wrapper накопил бы в памяти весь файл.
+            // Тела upload/download/thumbnail не оборачиваются: ContentCaching*Wrapper накопил бы в памяти весь файл.
             long startedAt = System.nanoTime();
             filterChain.doFilter(request, response);
             logBinaryExchange(request, response, startedAt);
@@ -66,7 +67,8 @@ public class HttpLoggingFilter extends OncePerRequestFilter {
 
     private boolean isDownload(HttpServletRequest request) {
         String path = request.getRequestURI().substring(request.getContextPath().length());
-        return HttpMethod.GET.matches(request.getMethod()) && PATH_MATCHER.match(DOWNLOAD_PATTERN, path);
+        return HttpMethod.GET.matches(request.getMethod())
+                && (PATH_MATCHER.match(DOWNLOAD_PATTERN, path) || PATH_MATCHER.match(THUMBNAIL_PATTERN, path));
     }
 
     // Query string не пишется: в бинарных операциях она не нужна для диагностики.

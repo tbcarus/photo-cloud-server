@@ -12,6 +12,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.JpaSort;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -29,6 +30,7 @@ import ru.tbcarus.photocloudserver.model.dto.PageResponse;
 import ru.tbcarus.photocloudserver.model.dto.RenameFileRequest;
 import ru.tbcarus.photocloudserver.service.FileItemService;
 import ru.tbcarus.photocloudserver.service.sync.ChecksumSyncService;
+import ru.tbcarus.photocloudserver.service.thumbnail.ThumbnailService;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -45,6 +47,7 @@ public class FileController {
     public static final String FILE_ID_URL = "/{id}";
     public static final String UPLOAD_URL = "/upload";
     public static final String DOWNLOAD_URL = FILE_ID_URL + "/download";
+    public static final String THUMBNAIL_URL = FILE_ID_URL + "/thumbnail";
     public static final String MOVE_URL = FILE_ID_URL + "/move";
     public static final String COPY_URL = FILE_ID_URL + "/copy";
     public static final String CHECKSUMS_URL = "/checksums";
@@ -54,6 +57,7 @@ public class FileController {
 
     private final FileItemService fileItemService;
     private final ChecksumSyncService checksumSyncService;
+    private final ThumbnailService thumbnailService;
 
     // Старый upload endpoint сохраняется для совместимости; folderId можно передать как optional multipart-параметр.
     @Operation(summary = "Upload file")
@@ -132,6 +136,42 @@ public class FileController {
                 .contentType(MediaType.parseMediaType(file.getStoredObject().getDetectedMimeType()))
                 .header(HttpHeaders.CONTENT_DISPOSITION, attachment(file.getOriginalName()))
                 .body(resource);
+    }
+
+    // Владелец проверяется до сравнения ETag: 304 не раскрывает существование чужого файла.
+    // При совпадении If-None-Match оригинал не декодируется.
+    @Operation(summary = "Get image thumbnail")
+    @GetMapping(THUMBNAIL_URL)
+    public ResponseEntity<byte[]> getThumbnail(@PathVariable Long id,
+                                               @RequestHeader HttpHeaders headers,
+                                               @AuthenticationPrincipal User user) throws IOException {
+        FileItem file = fileItemService.getFileForCurrentUser(id, user);
+        thumbnailService.requireSupported(file);
+        String etag = thumbnailService.etag(file);
+        if (matches(headers.getIfNoneMatch(), etag)) {
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
+                    .eTag(etag)
+                    .cacheControl(thumbnailService.cacheControl())
+                    .build();
+        }
+        byte[] jpeg = thumbnailService.generate(file);
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_JPEG)
+                .eTag(etag)
+                .cacheControl(thumbnailService.cacheControl())
+                .body(jpeg);
+    }
+
+    // Слабое сравнение, как требует RFC 9110 для If-None-Match. «*» не совпадает: миниатюры может не быть
+    // (например, у анимированного WebP), поэтому такой запрос получает обычный ответ.
+    private static boolean matches(List<String> ifNoneMatch, String etag) {
+        for (String candidate : ifNoneMatch) {
+            String value = candidate.startsWith("W/") ? candidate.substring(2) : candidate;
+            if (etag.equals(value)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ASCII-имя сохраняет прежний вид filename="..."; остальные кодируются по RFC 5987:

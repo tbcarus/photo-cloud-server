@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -109,9 +110,12 @@ public class GlobalExceptionHandler {
                 .body(error(ErrorCode.BAD_REQUEST, e.getMessage()));
     }
 
+    // Ошибки бинарных download/thumbnail: тип JSON задан явно, иначе при Accept: image/* тело не записывается
+    // и ответ уходит в /error, где без аутентификации становится 401.
     @ExceptionHandler(FileItemNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleFileItemNotFound(FileItemNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(error(ErrorCode.FILE_ITEM_NOT_FOUND, e.getMessage()));
     }
 
@@ -125,6 +129,36 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleFileSizeLimitExceeded(FileSizeLimitExceededException e) {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
                 .body(error(ErrorCode.FILE_TOO_LARGE, e.getMessage()));
+    }
+
+    @ExceptionHandler(ThumbnailUnsupportedException.class)
+    public ResponseEntity<ErrorResponse> handleThumbnailUnsupported(ThumbnailUnsupportedException e) {
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(error(ErrorCode.UNSUPPORTED_MEDIA_TYPE, e.getMessage()));
+    }
+
+    @ExceptionHandler(ThumbnailUnreadableException.class)
+    public ResponseEntity<ErrorResponse> handleThumbnailUnreadable(ThumbnailUnreadableException e) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(error(ErrorCode.IMAGE_UNREADABLE, e.getMessage()));
+    }
+
+    @ExceptionHandler(ThumbnailTooLargeException.class)
+    public ResponseEntity<ErrorResponse> handleThumbnailTooLarge(ThumbnailTooLargeException e) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(error(ErrorCode.IMAGE_TOO_LARGE, e.getMessage()));
+    }
+
+    // Очереди нет: клиент повторяет запрос позже.
+    @ExceptionHandler(ThumbnailBusyException.class)
+    public ResponseEntity<ErrorResponse> handleThumbnailBusy(ThumbnailBusyException e) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .header(HttpHeaders.RETRY_AFTER, "1")
+                .body(error(ErrorCode.SERVICE_BUSY, e.getMessage()));
     }
 
     @ExceptionHandler(FileAccessDeniedException.class)
@@ -182,6 +216,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleIoException(IOException e) {
         log.error("Ошибка операции с физическим хранилищем", e);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(error(ErrorCode.INTERNAL_ERROR, "Physical storage operation failed"));
     }
 
