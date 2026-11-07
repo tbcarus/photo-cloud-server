@@ -100,7 +100,7 @@ TODO: server-side copy без повторной передачи байтов �
 
 ### `GET /api/v1/files?folderId=...&page=0&size=10&sort=name`
 
-Возвращает страницу файлов текущего пользователя. Если `folderId` передан, возвращаются только прямые файлы этой папки.
+Без `folderId` возвращает страницу всех файлов текущего пользователя. С `folderId` — только прямые файлы этой папки; папка может быть собственной либо открытой текущему пользователю действующим USER-доступом (System SPEC [ACCESS-READ](../../system-spec/docs/spec/system/06-sharing-and-access.md#access-read)), тогда возвращаются файлы её владельца.
 
 Необязательный параметр `sort`:
 
@@ -139,7 +139,7 @@ Response `200 OK`:
 }
 ```
 
-Если `folderId` чужой или не существует: `404`.
+Если папки нет либо она чужая и не открыта доступом: `404`.
 
 ### `POST /api/v1/files`
 
@@ -163,11 +163,11 @@ Response `200 OK`: `FileItemDto`.
 
 ### `GET /api/v1/files/{id}`
 
-Возвращает metadata/logical card файла текущего пользователя.
+Возвращает metadata/logical card собственного файла либо файла, открытого действующим USER-доступом напрямую или через папку-предка.
 
 Response `200 OK`: `FileItemDto`.
 
-Если файл не найден или принадлежит другому пользователю: `404 FILE_ITEM_NOT_FOUND`.
+Если файл не найден либо чужой и не открыт доступом: `404 FILE_ITEM_NOT_FOUND`.
 
 ### `GET /api/v1/files/{id}/download`
 
@@ -179,7 +179,7 @@ Response `200 OK`:
 - `Content-Type`: `StoredObject.detectedMimeType`;
 - `Content-Disposition`: `attachment; filename="<FileItem.originalName>"` для ASCII-имени; для остальных имён дополнительно UTF-8: `filename="=?UTF-8?Q?...?="; filename*=UTF-8''<percent-encoded>` (RFC 5987). Значение заголовка содержит только ASCII, исходное имя не меняется.
 
-Если `FileItem` не найден, чужой, либо физический файл отсутствует/не читается: `404`.
+Право чтения — как у `GET /api/v1/files/{id}`. Если `FileItem` не найден, чужой и не открыт доступом, либо физический файл отсутствует/не читается: `404`.
 
 ### `GET /api/v1/files/{id}/thumbnail`
 
@@ -190,7 +190,7 @@ Request headers:
 - `Authorization: Bearer <accessToken>` — обязателен;
 - `If-None-Match` — необязателен: ETag из прежнего ответа (допускается `W/` и список).
 
-Порядок обработки: владелец (как у download) → формат по `StoredObject.detectedMimeType` → сравнение ETag → генерация.
+Порядок обработки: право чтения (как у download) → формат по `StoredObject.detectedMimeType` → сравнение ETag → генерация.
 
 Response `200 OK`:
 
@@ -331,7 +331,7 @@ Response `200 OK`:
 | --- | --- |
 | 400 | validation error, malformed body, empty file, слишком большой batch в checksum exists, illegal argument |
 | 401 | нет/невалидный access token |
-| 404 | файл/папка не найдены или принадлежат другому пользователю; physical file отсутствует при download/thumbnail. JSON и при `Accept: image/*` |
+| 404 | файл/папка не найдены или принадлежат другому пользователю (для чтения — и не открыты USER-доступом); physical file отсутствует при download/thumbnail. JSON и при `Accept: image/*` |
 | 409 | имя занято файлом или папкой, имя зарезервировано |
 | 413 | multipart/request или streamed file превышает лимит |
 | 415 | thumbnail: формат не поддерживается |
@@ -341,7 +341,7 @@ Response `200 OK`:
 
 ## TODO
 
-- sharing и корректная модель прав для чужих `FileItem`;
+- API выдачи и отзыва доступов, публичные ссылки; изменение чужих `FileItem` по доступу не допускается;
 - replace/overwrite;
 - auto-rename вида `file (1).jpg`;
 - soft delete/trash на базе `deletedAt`;

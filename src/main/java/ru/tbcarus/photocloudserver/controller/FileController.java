@@ -81,7 +81,7 @@ public class FileController {
         return ResponseEntity.ok(fileItemService.uploadFile(file, user, folderId, backupSource));
     }
 
-    // Возвращает файлы пользователя; при folderId список ограничен только прямыми файлами этой папки.
+    // Без folderId — все файлы текущего пользователя; с folderId — прямые файлы доступной для чтения папки.
     @Operation(summary = "Get current user files")
     @GetMapping
     public PageResponse<FileItemDto> getUserFiles(
@@ -123,14 +123,14 @@ public class FileController {
     @Operation(summary = "Get file metadata")
     @GetMapping(FILE_ID_URL)
     public ResponseEntity<FileItemDto> getFile(@PathVariable Long id, @AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(fileItemService.getFileDtoForCurrentUser(id, user));
+        return ResponseEntity.ok(fileItemService.getReadableFileDto(id, user));
     }
 
     // Скачивает физический объект, но имя отдаёт логическое originalName из FileItem.
     @Operation(summary = "Download file")
     @GetMapping(DOWNLOAD_URL)
     public ResponseEntity<Resource> downloadFile(@PathVariable Long id, @AuthenticationPrincipal User user) throws IOException {
-        FileItem file = fileItemService.getFileForCurrentUser(id, user);
+        FileItem file = fileItemService.getReadableFile(id, user);
         Resource resource = fileItemService.getDownloadResource(file);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(file.getStoredObject().getDetectedMimeType()))
@@ -138,14 +138,14 @@ public class FileController {
                 .body(resource);
     }
 
-    // Владелец проверяется до сравнения ETag: 304 не раскрывает существование чужого файла.
+    // Право чтения проверяется до сравнения ETag: 304 не раскрывает существование недоступного файла.
     // При совпадении If-None-Match оригинал не декодируется.
     @Operation(summary = "Get image thumbnail")
     @GetMapping(THUMBNAIL_URL)
     public ResponseEntity<byte[]> getThumbnail(@PathVariable Long id,
                                                @RequestHeader HttpHeaders headers,
                                                @AuthenticationPrincipal User user) throws IOException {
-        FileItem file = fileItemService.getFileForCurrentUser(id, user);
+        FileItem file = fileItemService.getReadableFile(id, user);
         thumbnailService.requireSupported(file);
         String etag = thumbnailService.etag(file);
         if (matches(headers.getIfNoneMatch(), etag)) {

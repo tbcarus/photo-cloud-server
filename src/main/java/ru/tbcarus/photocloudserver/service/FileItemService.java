@@ -78,6 +78,7 @@ public class FileItemService {
     private final FileMetadataExtractor fileMetadataExtractor;
     private final PlatformTransactionManager transactionManager;
     private final ObjectMapper objectMapper;
+    private final ReadAccess readAccess;
 
     public FileItemDto uploadFile(MultipartFile file, User user) throws IOException {
         return uploadFile(file, user, null);
@@ -169,17 +170,25 @@ public class FileItemService {
         if (folderId == null) {
             return getUserFiles(pageable, user);
         }
-        folderService.getFolderForUser(folderId, user);
-        return fileItemRepository.findAllByUserIdAndFolderId(user.getId(), folderId, pageable).map(fileItemMapper::toDto);
+        // Предоставленная папка читается файлами её владельца; без folderId список остаётся только своим.
+        Folder folder = readAccess.readableFolder(folderId, user);
+        return fileItemRepository.findAllByUserIdAndFolderId(folder.getUser().getId(), folderId, pageable)
+                .map(fileItemMapper::toDto);
     }
 
+    // Только владелец: основа операций изменения. Чтение предоставленных файлов — getReadableFile.
     public FileItem getFileForCurrentUser(Long fileId, User user) {
         return fileItemRepository.findByIdAndUserId(fileId, user.getId())
                 .orElseThrow(() -> new FileItemNotFoundException(fileId));
     }
 
-    public FileItemDto getFileDtoForCurrentUser(Long fileId, User user) {
-        return fileItemMapper.toDto(getFileForCurrentUser(fileId, user));
+    // Метаданные, download и миниатюра: собственный файл или действующий USER-доступ.
+    public FileItem getReadableFile(Long fileId, User user) {
+        return readAccess.readableFile(fileId, user);
+    }
+
+    public FileItemDto getReadableFileDto(Long fileId, User user) {
+        return fileItemMapper.toDto(getReadableFile(fileId, user));
     }
 
     public Resource getDownloadResource(FileItem fileItem) throws IOException {

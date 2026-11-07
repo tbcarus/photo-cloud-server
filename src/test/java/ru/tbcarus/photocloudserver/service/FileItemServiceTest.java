@@ -74,6 +74,9 @@ class FileItemServiceTest {
     @Mock
     PlatformTransactionManager transactionManager;
 
+    @Mock
+    ReadAccess readAccess;
+
     StorageProperties storageProperties;
     FilenameSanitizer filenameSanitizer;
     FileItemService fileItemService;
@@ -310,7 +313,8 @@ class FileItemServiceTest {
                 storageProperties,
                 fileMetadataExtractor,
                 transactionManager,
-                objectMapper
+                objectMapper,
+                readAccess
         );
     }
 

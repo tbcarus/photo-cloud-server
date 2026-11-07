@@ -48,6 +48,7 @@ public class FolderService {
     private final FilenameSanitizer filenameSanitizer;
     private final LibraryStorage libraryStorage;
     private final PlatformTransactionManager transactionManager;
+    private final ReadAccess readAccess;
 
     // Единственный маршрут без явной папки: подходящее медиа идёт в Camera, для обычных файлов папку выбирает клиент.
     @Transactional
@@ -112,10 +113,11 @@ public class FolderService {
                 });
     }
 
+    // Чтение по праву ReadAccess; потомки выбираются по владельцу папки, а не по текущему пользователю.
     @Transactional(readOnly = true)
     public List<Folder> getChildren(User user, Long parentId) {
-        Folder parent = getFolderForUser(parentId, user);
-        return folderRepository.findChildrenByUserIdAndParentId(user.getId(), parent.getId());
+        Folder parent = readAccess.readableFolder(parentId, user);
+        return folderRepository.findChildrenByUserIdAndParentId(parent.getUser().getId(), parent.getId());
     }
 
     public Folder createFolder(User user, Long parentId, String name) {
@@ -396,6 +398,7 @@ public class FolderService {
         return new TransactionTemplate(transactionManager);
     }
 
+    // Только владелец: основа операций изменения. Чтение предоставленных папок — ReadAccess.
     @Transactional(readOnly = true)
     public Folder getFolderForUser(Long folderId, User user) {
         return folderRepository.findByIdAndUserId(folderId, user.getId())

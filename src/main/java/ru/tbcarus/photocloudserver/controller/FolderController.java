@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import ru.tbcarus.photocloudserver.model.Folder;
 import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.model.dto.CreateBackupSourceRequest;
 import ru.tbcarus.photocloudserver.model.dto.CreateFolderRequest;
@@ -73,8 +74,17 @@ public class FolderController {
     @GetMapping(CHILDREN_URL)
     public ResponseEntity<List<FolderDto>> getChildren(@PathVariable Long id, @AuthenticationPrincipal User user) {
         return ResponseEntity.ok(folderService.getChildren(user, id).stream()
-                .map(folderMapper::toDto)
+                .map(folder -> toDtoFor(folder, user))
                 .toList());
+    }
+
+    // Идентификатор источника — внутреннее значение владельца: получателю по Share он не выдаётся.
+    private FolderDto toDtoFor(Folder folder, User user) {
+        FolderDto dto = folderMapper.toDto(folder);
+        if (!folder.getUser().getId().equals(user.getId())) {
+            dto.setBackupSource(null);
+        }
+        return dto;
     }
 
     // Создаёт USER-папку в ROOT, если parentId не передан, либо внутри USER-папки.
