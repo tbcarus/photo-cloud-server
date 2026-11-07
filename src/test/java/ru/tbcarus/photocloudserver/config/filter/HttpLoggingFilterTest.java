@@ -11,37 +11,36 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.web.util.ContentCachingRequestWrapper;
-import org.springframework.web.util.ContentCachingResponseWrapper;
+import org.springframework.web.servlet.HandlerMapping;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
- * Бинарные upload/download проходят фильтр без ContentCaching*Wrapper: тело идёт напрямую, а не копится в памяти.
- * Остальные запросы логируются, как прежде, вместе с JSON-телом.
+ * Фильтр пишет только метод, шаблон маршрута, статус и длительность; запрос и ответ идут дальше без обёрток.
+ * Сопоставление маршрута через MVC проверяет HttpLoggingIntegrationTest.
  */
 @ExtendWith(OutputCaptureExtension.class)
 class HttpLoggingFilterTest {
 
+    private static final String SECRET = "s3cr3t-value-7f2a";
     private static final byte[] FILE_BYTES = allByteValues(64 * 1024);
 
-    private final HttpLoggingFilter filter = new HttpLoggingFilter();
+    @SuppressWarnings("unchecked")
+    private final HttpLoggingFilter filter = new HttpLoggingFilter(mock(ObjectProvider.class));
     private final Logger filterLogger = (Logger) LoggerFactory.getLogger(HttpLoggingFilter.class);
     private Level previousLevel;
 
@@ -58,10 +57,11 @@ class HttpLoggingFilterTest {
     }
 
     @Test
-    void multipartUploadsReachControllerWithOriginalRequestAndResponse() throws Exception {
-        for (String uri : List.of("/api/v1/files", "/api/v1/files/upload")) {
+    void anyRequestReachesChainWithOriginalRequestAndResponse() throws Exception {
+        for (String uri : List.of("/api/v1/files/upload", "/api/v1/files/42/download", "/api/v1/auth/login",
+                "/api/v1/files/checksums/exists", "/s/" + SECRET)) {
             MockHttpServletRequest request = new MockHttpServletRequest("POST", uri);
-            request.setContentType("multipart/form-data; boundary=photo");
+            request.setContentType(MediaType.APPLICATION_JSON_VALUE);
             request.setContent(FILE_BYTES);
             MockHttpServletResponse response = new MockHttpServletResponse();
             AtomicReference<ServletRequest> seenRequest = new AtomicReference<>();
@@ -70,137 +70,53 @@ class HttpLoggingFilterTest {
             filter.doFilter(request, response, (req, res) -> {
                 seenRequest.set(req);
                 seenResponse.set(res);
-                // Контроллер читает всё тело: через кеширующий wrapper оно осело бы в памяти фильтра.
                 assertThat(req.getInputStream().readAllBytes()).isEqualTo(FILE_BYTES);
-                ((HttpServletResponse) res).setStatus(200);
+                res.getOutputStream().write(FILE_BYTES);
+                // Байты уже у контейнера, пока обработчик не вернул управление: фильтр их не держит.
+                assertThat(response.getContentAsByteArray()).hasSize(FILE_BYTES.length);
             });
 
+            // Без ContentCaching*Wrapper: ни тело запроса, ни тело ответа не накапливаются в памяти фильтра.
             assertThat(seenRequest.get()).isSameAs(request);
             assertThat(seenResponse.get()).isSameAs(response);
+            assertThat(response.getContentAsByteArray()).isEqualTo(FILE_BYTES);
         }
     }
 
     @Test
-    void downloadWritesStraightToResponseWithoutCaching(CapturedOutput output) throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/files/42/download");
-        request.setQueryString("token=secret");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        filter.doFilter(request, response, (req, res) -> {
-            assertThat(res).isSameAs(response).isNotInstanceOf(ContentCachingResponseWrapper.class);
-            res.setContentType(MediaType.IMAGE_JPEG_VALUE);
-            res.getOutputStream().write(FILE_BYTES);
-            // Байты уже у контейнера, пока контроллер не вернул управление: фильтр их не держит.
-            assertThat(response.getContentAsByteArray()).hasSize(FILE_BYTES.length);
-        });
-
-        assertThat(response.getContentAsByteArray()).isEqualTo(FILE_BYTES);
-        assertThat(response.getContentType()).isEqualTo(MediaType.IMAGE_JPEG_VALUE);
-        assertThat(output).contains(">>> GET /api/v1/files/42/download | body: [binary]");
-        assertThat(output).containsPattern("<<< 200 \\| \\d+ ms \\| body: \\[binary]");
-        assertThat(output).doesNotContain("token=secret");
-    }
-
-    @Test
-    void thumbnailWritesStraightToResponseWithoutLoggingBody(CapturedOutput output) throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/files/42/thumbnail");
-        request.addHeader("Authorization", "Bearer secret-token");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        filter.doFilter(request, response, (req, res) -> {
-            assertThat(res).isSameAs(response).isNotInstanceOf(ContentCachingResponseWrapper.class);
-            res.setContentType(MediaType.IMAGE_JPEG_VALUE);
-            res.getOutputStream().write(FILE_BYTES);
-        });
-
-        assertThat(response.getContentAsByteArray()).isEqualTo(FILE_BYTES);
-        assertThat(output).contains(">>> GET /api/v1/files/42/thumbnail | body: [binary]");
-        assertThat(output).containsPattern("<<< 200 \\| \\d+ ms \\| body: \\[binary]");
-        assertThat(output).doesNotContain("secret-token");
-    }
-
-    @Test
-    void downloadUnderContextPathIsAlsoNotCached() throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/app/api/v1/files/7/download");
-        request.setContextPath("/app");
-        MockHttpServletResponse response = new MockHttpServletResponse();
-        AtomicReference<ServletResponse> seen = new AtomicReference<>();
-
-        filter.doFilter(request, response, (req, res) -> seen.set(res));
-
-        assertThat(seen.get()).isSameAs(response);
-    }
-
-    @Test
-    void concurrentDownloadsDoNotGetPerFileBuffers() throws Exception {
-        int downloads = 8;
-        CountDownLatch allInside = new CountDownLatch(downloads);
-        ExecutorService executor = Executors.newFixedThreadPool(downloads);
-        try {
-            List<Future<MockHttpServletResponse>> results = new ArrayList<>();
-            for (int i = 0; i < downloads; i++) {
-                String uri = "/api/v1/files/" + i + "/download";
-                results.add(executor.submit(() -> {
-                    MockHttpServletRequest request = new MockHttpServletRequest("GET", uri);
-                    MockHttpServletResponse response = new MockHttpServletResponse();
-                    filter.doFilter(request, response, (req, res) -> {
-                        assertThat(res).isSameAs(response);
-                        res.getOutputStream().write(FILE_BYTES);
-                        // Все скачивания одновременно внутри цепочки: ни у одного тело не задержано фильтром.
-                        assertThat(response.getContentAsByteArray()).hasSize(FILE_BYTES.length);
-                        allInside.countDown();
-                        try {
-                            assertThat(allInside.await(10, TimeUnit.SECONDS)).isTrue();
-                        } catch (InterruptedException e) {
-                            Thread.currentThread().interrupt();
-                            throw new IllegalStateException(e);
-                        }
-                    });
-                    return response;
-                }));
-            }
-            for (Future<MockHttpServletResponse> result : results) {
-                assertThat(result.get(20, TimeUnit.SECONDS).getContentAsByteArray()).isEqualTo(FILE_BYTES);
-            }
-        } finally {
-            executor.shutdownNow();
-        }
-    }
-
-    @Test
-    void jsonRequestsKeepBodyLogging(CapturedOutput output) throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/files/checksums/exists");
+    void logsRoutePatternStatusAndDurationOnly(CapturedOutput output) throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/auth/login/" + SECRET);
+        request.setQueryString("code=" + SECRET);
+        request.addHeader("Authorization", "Bearer " + SECRET);
+        request.addHeader("Cookie", "SESSION=" + SECRET);
         request.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        request.setContent("{\"folderId\":2}".getBytes(StandardCharsets.UTF_8));
+        request.setContent(("{\"password\":\"" + SECRET + "\"}").getBytes(StandardCharsets.UTF_8));
         MockHttpServletResponse response = new MockHttpServletResponse();
-        AtomicReference<ServletRequest> seen = new AtomicReference<>();
 
         filter.doFilter(request, response, (req, res) -> {
-            seen.set(req);
+            req.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/api/v1/auth/login/{code}");
             req.getInputStream().readAllBytes();
             res.setContentType(MediaType.APPLICATION_JSON_VALUE);
-            res.getOutputStream().write("{\"existing\":[]}".getBytes(StandardCharsets.UTF_8));
+            res.getOutputStream().write(("{\"accessToken\":\"" + SECRET + "\"}").getBytes(StandardCharsets.UTF_8));
         });
 
-        assertThat(seen.get()).isInstanceOf(ContentCachingRequestWrapper.class);
-        assertThat(response.getContentAsString()).isEqualTo("{\"existing\":[]}");
-        assertThat(output).contains("body: {\"folderId\":2}");
-        assertThat(output).contains("body: {\"existing\":[]}");
+        assertThat(output).containsPattern("POST /api/v1/auth/login/\\{code} -> 200 \\| \\d+ ms");
+        assertThat(output).doesNotContain(SECRET);
     }
 
     @Test
-    void nonDownloadFileRequestsAreLoggedAsBefore() throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/files/42");
+    void unknownRouteIsNotPrintedAsActualPath(CapturedOutput output) throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/s/" + SECRET);
         MockHttpServletResponse response = new MockHttpServletResponse();
-        AtomicReference<ServletResponse> seen = new AtomicReference<>();
 
-        filter.doFilter(request, response, (req, res) -> seen.set(res));
+        filter.doFilter(request, response, (req, res) -> ((HttpServletResponse) res).setStatus(404));
 
-        assertThat(seen.get()).isInstanceOf(ContentCachingResponseWrapper.class);
+        assertThat(output).containsPattern("GET \\[unmapped] -> 404 \\| \\d+ ms");
+        assertThat(output).doesNotContain(SECRET);
     }
 
     @Test
-    void binaryExchangeKeepsErrorStatusAndBody() throws Exception {
+    void errorStatusAndBodyArePassedUnchanged() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/files/404/download");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
@@ -216,15 +132,36 @@ class HttpLoggingFilterTest {
     }
 
     @Test
-    void binaryExchangePropagatesChainException() {
+    void chainExceptionIsPropagatedAndLoggedWithoutMessage(CapturedOutput output) {
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/files/1/download");
         FilterChain failing = (req, res) -> {
-            throw new IllegalStateException("storage failure");
+            req.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, "/api/v1/files/{id}/download");
+            throw new IllegalStateException("storage failure " + SECRET);
         };
 
         assertThatThrownBy(() -> filter.doFilter(request, new MockHttpServletResponse(), failing))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessage("storage failure");
+                .hasMessage("storage failure " + SECRET);
+        assertThat(output).containsPattern("GET /api/v1/files/\\{id}/download -> IllegalStateException \\| \\d+ ms");
+        assertThat(output).doesNotContain(SECRET);
+    }
+
+    @Test
+    void failingRouteResolutionDoesNotBreakRequest(CapturedOutput output) throws Exception {
+        RequestMappingHandlerMapping broken = mock(RequestMappingHandlerMapping.class, invocation -> {
+            throw new IllegalStateException("mapping failure");
+        });
+        @SuppressWarnings("unchecked")
+        ObjectProvider<RequestMappingHandlerMapping> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(broken);
+        HttpLoggingFilter withBrokenMapping = new HttpLoggingFilter(provider);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        withBrokenMapping.doFilter(new MockHttpServletRequest("GET", "/api/v1/files/1"), response,
+                (req, res) -> ((HttpServletResponse) res).setStatus(401));
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(output).containsPattern("GET \\[unmapped] -> 401 \\| \\d+ ms");
     }
 
     private static byte[] allByteValues(int size) {

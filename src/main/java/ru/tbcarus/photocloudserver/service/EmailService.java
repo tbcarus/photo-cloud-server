@@ -59,7 +59,8 @@ public class EmailService {
             String html = templateEngine.process(email.getTemplate(), context);
             helper.setText(html, true);
 
-            log.info("Sending email: {} with html body: {}", email, html);
+            // Ссылка в письме содержит код подтверждения: ни письмо, ни контекст шаблона в лог не пишутся.
+            log.info("Sending {} email to user {}", emailRequest.getType(), emailRequest.getUser().getId());
             mailSender.send(message);
         } catch (MessagingException | MailException | TemplateEngineException e) {
             // Ошибка формирования или отправки: сохранённые данные не откатываются, клиент получает 503.

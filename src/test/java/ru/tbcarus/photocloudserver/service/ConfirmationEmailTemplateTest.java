@@ -1,5 +1,7 @@
 package ru.tbcarus.photocloudserver.service;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
 import jakarta.mail.BodyPart;
 import jakarta.mail.Multipart;
 import jakarta.mail.Part;
@@ -7,14 +9,18 @@ import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.thymeleaf.ThymeleafAutoConfiguration;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.assertj.AssertableApplicationContext;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -31,6 +37,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(OutputCaptureExtension.class)
 class ConfirmationEmailTemplateTest {
 
     private static final String CODE = UUID.randomUUID().toString();
@@ -64,6 +71,25 @@ class ConfirmationEmailTemplateTest {
                     "действует только ссылка из последнего письма",
                     "Если вы не запрашивали регистрацию, просто проигнорируйте это письмо");
         });
+    }
+
+    @Test
+    void sentEmailIsLoggedWithoutLinkAndCode(CapturedOutput output) {
+        Logger emailLogger = (Logger) LoggerFactory.getLogger(EmailService.class);
+        Level previousLevel = emailLogger.getLevel();
+        // Интеграционные тесты в той же JVM понижают уровень пакета до WARN.
+        emailLogger.setLevel(Level.INFO);
+        try {
+            contextRunner.run(context -> {
+                String html = renderActivationEmail(context, "");
+                assertThat(html).contains(CODE);
+            });
+        } finally {
+            emailLogger.setLevel(previousLevel);
+        }
+
+        assertThat(output).contains("Sending ACTIVATE email to user 1");
+        assertThat(output).doesNotContain(CODE, "user@test.local");
     }
 
     @Test
