@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 import ru.tbcarus.photocloudserver.model.Share;
+import ru.tbcarus.photocloudserver.model.ShareKind;
 
 import java.time.Instant;
 import java.util.Collection;
@@ -75,21 +76,22 @@ public interface ShareRepository extends JpaRepository<Share, Long> {
     // Управление USER-доступами: каждое условие включает владельца или получателя, поэтому чужой shareId неотличим от отсутствующего.
     // Изменения — массовыми запросами: параллельное удаление даёт 0 строк, а не ошибку устаревшей сущности.
 
+    // Запросы владельца принимают вид доступа: USER и LINK управляются отдельными API и друг друга не затрагивают.
     @EntityGraph(attributePaths = {"folder", "fileItem", "recipient"})
     @Query("""
             SELECT s FROM Share s
-            WHERE s.owner.id = :ownerId AND s.kind = ru.tbcarus.photocloudserver.model.ShareKind.USER
+            WHERE s.owner.id = :ownerId AND s.kind = :kind
               AND (:folderId IS NULL OR s.folder.id = :folderId)
               AND (:fileId IS NULL OR s.fileItem.id = :fileId)
             """)
-    Page<Share> findUserSharesByOwner(Long ownerId, Long folderId, Long fileId, Pageable pageable);
+    Page<Share> findOwnShares(Long ownerId, ShareKind kind, Long folderId, Long fileId, Pageable pageable);
 
     @EntityGraph(attributePaths = {"folder", "fileItem", "recipient"})
     @Query("""
             SELECT s FROM Share s
-            WHERE s.id = :id AND s.owner.id = :ownerId AND s.kind = ru.tbcarus.photocloudserver.model.ShareKind.USER
+            WHERE s.id = :id AND s.owner.id = :ownerId AND s.kind = :kind
             """)
-    Optional<Share> findUserShareByIdAndOwner(Long id, Long ownerId);
+    Optional<Share> findOwnShare(Long id, Long ownerId, ShareKind kind);
 
     @EntityGraph(attributePaths = {"folder", "fileItem", "recipient"})
     @Query("""
@@ -118,25 +120,25 @@ public interface ShareRepository extends JpaRepository<Share, Long> {
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             UPDATE Share s SET s.expiresAt = :expiresAt
-            WHERE s.id = :id AND s.owner.id = :ownerId AND s.kind = ru.tbcarus.photocloudserver.model.ShareKind.USER
+            WHERE s.id = :id AND s.owner.id = :ownerId AND s.kind = :kind
             """)
-    int updateExpiryByIdAndOwner(Long id, Long ownerId, Instant expiresAt);
+    int updateOwnShareExpiry(Long id, Long ownerId, ShareKind kind, Instant expiresAt);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             DELETE FROM Share s
-            WHERE s.id = :id AND s.owner.id = :ownerId AND s.kind = ru.tbcarus.photocloudserver.model.ShareKind.USER
+            WHERE s.id = :id AND s.owner.id = :ownerId AND s.kind = :kind
             """)
-    int deleteUserShareByIdAndOwner(Long id, Long ownerId);
+    int deleteOwnShare(Long id, Long ownerId, ShareKind kind);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             DELETE FROM Share s
-            WHERE s.owner.id = :ownerId AND s.kind = ru.tbcarus.photocloudserver.model.ShareKind.USER
+            WHERE s.owner.id = :ownerId AND s.kind = :kind
               AND (:folderId IS NULL OR s.folder.id = :folderId)
               AND (:fileId IS NULL OR s.fileItem.id = :fileId)
             """)
-    int deleteUserSharesOfResource(Long ownerId, Long folderId, Long fileId);
+    int deleteOwnSharesOfResource(Long ownerId, ShareKind kind, Long folderId, Long fileId);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
@@ -179,4 +181,8 @@ public interface ShareRepository extends JpaRepository<Share, Long> {
                 OR (fi.id IS NOT NULL AND fi.user.id = o.id AND so.user.id = o.id))
             """)
     Page<Share> findActiveSharedWith(Long recipientId, Instant now, Pageable pageable);
+
+    // Публичная ссылка ищется только по SHA-256 токена; остальные проверки выполняет LinkAccess.
+    @EntityGraph(attributePaths = {"owner", "folder", "fileItem", "fileItem.storedObject", "fileItem.folder"})
+    Optional<Share> findByTokenHashAndKind(String tokenHash, ShareKind kind);
 }

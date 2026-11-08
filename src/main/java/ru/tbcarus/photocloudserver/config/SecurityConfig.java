@@ -3,6 +3,7 @@ package ru.tbcarus.photocloudserver.config;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -15,6 +16,7 @@ import ru.tbcarus.photocloudserver.config.filter.JwtAuthenticationFilter;
 import ru.tbcarus.photocloudserver.controller.ApiPaths;
 import ru.tbcarus.photocloudserver.controller.AuthController;
 import ru.tbcarus.photocloudserver.controller.PasswordController;
+import ru.tbcarus.photocloudserver.controller.PublicLinkController;
 import ru.tbcarus.photocloudserver.controller.RegisterController;
 import ru.tbcarus.photocloudserver.controller.RootController;
 
@@ -45,6 +47,11 @@ public class SecurityConfig {
                                 PasswordController.BASE_URL + PasswordController.RESET_RESEND_URL,
                                 PasswordController.BASE_URL + PasswordController.RESET_PAGE_URL,
                                 "/swagger-ui/**", "/swagger-resources/*", "/v3/api-docs/**").permitAll()
+                        // Публичные ссылки: анонимно только чтение; право проверяет токен в LinkAccess.
+                        .requestMatchers(HttpMethod.GET, PublicLinkController.DIRECT_URL, PublicLinkController.BASE_URL + "/**",
+                                PublicLinkController.BASE_URL).permitAll()
+                        .requestMatchers(HttpMethod.HEAD, PublicLinkController.DIRECT_URL, PublicLinkController.BASE_URL + "/**",
+                                PublicLinkController.BASE_URL).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
                 .authenticationEntryPoint(authenticationEntryPoint) // 401

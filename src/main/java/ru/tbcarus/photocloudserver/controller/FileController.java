@@ -104,7 +104,7 @@ public class FileController {
     }
 
     // Порядок применяет PostgreSQL до LIMIT/OFFSET; id делает порядок страниц однозначным.
-    private Sort resolveFilesSort(String sort) {
+    static Sort resolveFilesSort(String sort) {
         if (sort == null) {
             return Sort.by(
                     Sort.Order.desc("capturedAt"),
@@ -164,7 +164,7 @@ public class FileController {
 
     // Слабое сравнение, как требует RFC 9110 для If-None-Match. «*» не совпадает: миниатюры может не быть
     // (например, у анимированного WebP), поэтому такой запрос получает обычный ответ.
-    private static boolean matches(List<String> ifNoneMatch, String etag) {
+    static boolean matches(List<String> ifNoneMatch, String etag) {
         for (String candidate : ifNoneMatch) {
             String value = candidate.startsWith("W/") ? candidate.substring(2) : candidate;
             if (etag.equals(value)) {
@@ -176,7 +176,7 @@ public class FileController {
 
     // ASCII-имя сохраняет прежний вид filename="..."; остальные кодируются по RFC 5987:
     // Tomcat отбрасывает заголовок с символами вне ISO-8859-1.
-    private String attachment(String filename) {
+    static String attachment(String filename) {
         boolean ascii = StandardCharsets.US_ASCII.newEncoder().canEncode(filename);
         return ContentDisposition.attachment()
                 .filename(filename, ascii ? StandardCharsets.US_ASCII : StandardCharsets.UTF_8)

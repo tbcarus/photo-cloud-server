@@ -191,6 +191,20 @@ public class GlobalExceptionHandler {
                 .body(error(ErrorCode.FOLDER_MANAGED, e.getMessage()));
     }
 
+    // Публичные download и миниатюра: тип JSON задан явно, как у FileItemNotFoundException.
+    @ExceptionHandler(PublicLinkNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handlePublicLinkNotFound(PublicLinkNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(error(ErrorCode.NOT_FOUND, e.getMessage()));
+    }
+
+    @ExceptionHandler(LinkSharingUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleLinkSharingUnavailable(LinkSharingUnavailableException e) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(error(ErrorCode.LINK_SHARING_UNAVAILABLE, e.getMessage()));
+    }
+
     @ExceptionHandler(ShareNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleShareNotFound(ShareNotFoundException e) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)

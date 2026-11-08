@@ -31,6 +31,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final UserService userService;
     private final JsonAuthenticationEntryPoint entryPoint;
 
+    // Публичные ссылки не используют JWT: случайный или устаревший заголовок Authorization не должен давать 401.
+    @Override
+    protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
+        return PublicResponseHeadersFilter.isPublicPath(request);
+    }
+
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull FilterChain filterChain) throws ServletException, IOException {
 

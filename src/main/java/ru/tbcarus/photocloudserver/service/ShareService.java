@@ -15,7 +15,9 @@ import ru.tbcarus.photocloudserver.model.FolderType;
 import ru.tbcarus.photocloudserver.model.Share;
 import ru.tbcarus.photocloudserver.model.ShareKind;
 import ru.tbcarus.photocloudserver.model.User;
+import ru.tbcarus.photocloudserver.model.dto.CreateLinkShareRequest;
 import ru.tbcarus.photocloudserver.model.dto.GrantUserShareRequest;
+import ru.tbcarus.photocloudserver.model.dto.LinkShareDto;
 import ru.tbcarus.photocloudserver.model.dto.ShareDto;
 import ru.tbcarus.photocloudserver.model.dto.ShareResourceType;
 import ru.tbcarus.photocloudserver.model.dto.ShareStatus;
@@ -25,6 +27,7 @@ import ru.tbcarus.photocloudserver.model.dto.UpdateShareRequest;
 import ru.tbcarus.photocloudserver.model.dto.mapper.FileItemMapper;
 import ru.tbcarus.photocloudserver.repository.ShareRepository;
 import ru.tbcarus.photocloudserver.repository.UserRepository;
+import ru.tbcarus.photocloudserver.service.link.LinkTokenService;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -49,6 +52,7 @@ public class ShareService {
     private final FolderService folderService;
     private final FileItemService fileItemService;
     private final FileItemMapper fileItemMapper;
+    private final LinkTokenService linkTokens;
 
     // Все получатели или никто: недопустимый адрес отклоняет операцию до записи.
     // Под блокировкой дерева владельца: удаление ресурса не пройдёт между проверкой и созданием доступа,
@@ -91,17 +95,9 @@ public class ShareService {
     // Без фильтра — все USER-доступы владельца; фильтр по ресурсу допускает только собственный ресурс.
     @Transactional(readOnly = true)
     public Page<ShareDto> listGranted(User owner, Long fileId, Long folderId, int page, int size) {
-        if (fileId != null && folderId != null) {
-            throw new IllegalArgumentException("Specify either fileId or folderId");
-        }
-        if (fileId != null) {
-            fileItemService.getFileForCurrentUser(fileId, owner);
-        }
-        if (folderId != null) {
-            folderService.getFolderForUser(folderId, owner);
-        }
+        requireOwnFilter(owner, fileId, folderId);
         Instant now = Instant.now();
-        return shareRepository.findUserSharesByOwner(owner.getId(), folderId, fileId, PageRequest.of(page, size, NEWEST_FIRST))
+        return shareRepository.findOwnShares(owner.getId(), ShareKind.USER, folderId, fileId, PageRequest.of(page, size, NEWEST_FIRST))
                 .map(share -> toShareDto(share, now));
     }
 
@@ -111,17 +107,17 @@ public class ShareService {
             throw new IllegalArgumentException("expiresAt is required; null removes the expiry");
         }
         Instant expiresAt = validExpiry(request.getExpiresAt());
-        if (shareRepository.updateExpiryByIdAndOwner(shareId, owner.getId(), expiresAt) == 0) {
+        if (shareRepository.updateOwnShareExpiry(shareId, owner.getId(), ShareKind.USER, expiresAt) == 0) {
             throw new ShareNotFoundException(shareId);
         }
-        return shareRepository.findUserShareByIdAndOwner(shareId, owner.getId())
+        return shareRepository.findOwnShare(shareId, owner.getId(), ShareKind.USER)
                 .map(share -> toShareDto(share, Instant.now()))
                 .orElseThrow(() -> new ShareNotFoundException(shareId));
     }
 
     @Transactional
     public void revoke(User owner, Long shareId) {
-        if (shareRepository.deleteUserShareByIdAndOwner(shareId, owner.getId()) == 0) {
+        if (shareRepository.deleteOwnShare(shareId, owner.getId(), ShareKind.USER) == 0) {
             throw new ShareNotFoundException(shareId);
         }
     }
@@ -132,7 +128,7 @@ public class ShareService {
         requireSingleResource(fileId, folderId);
         folderService.lockUserTree(owner);
         Resource resource = ownedResource(owner, fileId, folderId);
-        shareRepository.deleteUserSharesOfResource(owner.getId(), resource.folderId(), resource.fileId());
+        shareRepository.deleteOwnSharesOfResource(owner.getId(), ShareKind.USER, resource.folderId(), resource.fileId());
     }
 
     @Transactional(readOnly = true)
@@ -146,6 +142,102 @@ public class ShareService {
     public void refuse(User recipient, Long shareId) {
         if (shareRepository.deleteUserShareByIdAndRecipient(shareId, recipient.getId()) == 0) {
             throw new ShareNotFoundException(shareId);
+        }
+    }
+
+    // --- Публичные ссылки (LINK): управление только владельцем, USER-доступы не затрагиваются ---
+
+    /**
+     * Каждый вызов создаёт новую независимую ссылку со своим секретом. Под блокировкой дерева владельца: удаление
+     * ресурса не пройдёт между проверкой и созданием. В БД — только SHA-256 и зашифрованный секрет.
+     */
+    @Transactional
+    public LinkShareDto createLink(User owner, CreateLinkShareRequest request) {
+        linkTokens.requireConfigured();
+        requireSingleResource(request.fileId(), request.folderId());
+        Instant expiresAt = validExpiry(request.expiresAt());
+
+        folderService.lockUserTree(owner);
+        Resource resource = ownedShareableResource(owner, request.fileId(), request.folderId());
+        String token = linkTokens.generateToken();
+        Share share = shareRepository.saveAndFlush(Share.builder()
+                .owner(owner)
+                .folder(resource.folder())
+                .fileItem(resource.file())
+                .kind(ShareKind.LINK)
+                .tokenHash(linkTokens.hash(token))
+                .encryptedToken(linkTokens.encrypt(token))
+                .expiresAt(expiresAt)
+                .build());
+        return toLinkDto(share, linkTokens.url(token), Instant.now());
+    }
+
+    /** Ссылки владельца, включая истёкшие; URL восстанавливается из зашифрованного секрета. */
+    @Transactional(readOnly = true)
+    public Page<LinkShareDto> listLinks(User owner, Long fileId, Long folderId, int page, int size) {
+        linkTokens.requireConfigured();
+        requireOwnFilter(owner, fileId, folderId);
+        Instant now = Instant.now();
+        return shareRepository.findOwnShares(owner.getId(), ShareKind.LINK, folderId, fileId, PageRequest.of(page, size, NEWEST_FIRST))
+                .map(share -> toLinkDto(share, linkUrl(share), now));
+    }
+
+    @Transactional
+    public LinkShareDto updateLinkExpiry(User owner, Long shareId, UpdateShareRequest request) {
+        linkTokens.requireConfigured();
+        if (!request.isExpiresAtPresent()) {
+            throw new IllegalArgumentException("expiresAt is required; null removes the expiry");
+        }
+        Instant expiresAt = validExpiry(request.getExpiresAt());
+        if (shareRepository.updateOwnShareExpiry(shareId, owner.getId(), ShareKind.LINK, expiresAt) == 0) {
+            throw new ShareNotFoundException(shareId);
+        }
+        return shareRepository.findOwnShare(shareId, owner.getId(), ShareKind.LINK)
+                .map(share -> toLinkDto(share, linkUrl(share), Instant.now()))
+                .orElseThrow(() -> new ShareNotFoundException(shareId));
+    }
+
+    // Отзыв не требует ключа и адреса: закрыть ссылку можно и при неполной конфигурации.
+    @Transactional
+    public void revokeLink(User owner, Long shareId) {
+        if (shareRepository.deleteOwnShare(shareId, owner.getId(), ShareKind.LINK) == 0) {
+            throw new ShareNotFoundException(shareId);
+        }
+    }
+
+    @Transactional
+    public void revokeAllLinks(User owner, Long fileId, Long folderId) {
+        requireSingleResource(fileId, folderId);
+        folderService.lockUserTree(owner);
+        Resource resource = ownedResource(owner, fileId, folderId);
+        shareRepository.deleteOwnSharesOfResource(owner.getId(), ShareKind.LINK, resource.folderId(), resource.fileId());
+    }
+
+    private String linkUrl(Share share) {
+        return linkTokens.decrypt(share.getEncryptedToken()).map(linkTokens::url).orElse(null);
+    }
+
+    private LinkShareDto toLinkDto(Share share, String url, Instant now) {
+        return new LinkShareDto(
+                share.getId(),
+                resourceType(share),
+                resourceId(share),
+                resourceName(share),
+                url,
+                share.getExpiresAt(),
+                status(share, now),
+                share.getCreatedAt());
+    }
+
+    private void requireOwnFilter(User owner, Long fileId, Long folderId) {
+        if (fileId != null && folderId != null) {
+            throw new IllegalArgumentException("Specify either fileId or folderId");
+        }
+        if (fileId != null) {
+            fileItemService.getFileForCurrentUser(fileId, owner);
+        }
+        if (folderId != null) {
+            folderService.getFolderForUser(folderId, owner);
         }
     }
 
@@ -207,7 +299,6 @@ public class ShareService {
     }
 
     private ShareDto toShareDto(Share share, Instant now) {
-        boolean active = share.getExpiresAt() == null || now.isBefore(share.getExpiresAt());
         return new ShareDto(
                 share.getId(),
                 resourceType(share),
@@ -215,8 +306,13 @@ public class ShareService {
                 resourceName(share),
                 userDto(share.getRecipient()),
                 share.getExpiresAt(),
-                active ? ShareStatus.ACTIVE : ShareStatus.EXPIRED,
+                status(share, now),
                 share.getCreatedAt());
+    }
+
+    private ShareStatus status(Share share, Instant now) {
+        boolean active = share.getExpiresAt() == null || now.isBefore(share.getExpiresAt());
+        return active ? ShareStatus.ACTIVE : ShareStatus.EXPIRED;
     }
 
     private SharedResourceDto toSharedResourceDto(Share share) {

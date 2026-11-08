@@ -18,6 +18,11 @@ token:
   signing:
     key: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYwMTIzNDU2Nzg5YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZg==
 
+sharing:
+  public-base-url: http://localhost:8080
+  # Ключ только для изолированных тестов.
+  link-key: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=
+
 storage:
   pending-delete-interval: PT1H # тесты запускают очистку сами
 

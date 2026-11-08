@@ -76,4 +76,15 @@ public interface FolderRepository extends JpaRepository<Folder, Long> {
     @Modifying
     @Query(value = "DELETE FROM folder WHERE id = :folderId", nativeQuery = true)
     void deleteTree(Long folderId);
+
+    // Папка — сама [rootId] или её потомок у того же владельца; UNION обрывает цикл дерева.
+    @Query(value = """
+            WITH RECURSIVE chain(id, parent_id, user_id) AS (
+                SELECT id, parent_id, user_id FROM folder WHERE id = :folderId AND user_id = :ownerId
+                UNION
+                SELECT f.id, f.parent_id, f.user_id FROM folder f JOIN chain c ON f.id = c.parent_id AND f.user_id = c.user_id
+            )
+            SELECT EXISTS (SELECT 1 FROM chain WHERE id = :rootId)
+            """, nativeQuery = true)
+    boolean isInTree(Long rootId, Long folderId, Long ownerId);
 }
