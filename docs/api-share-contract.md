@@ -133,7 +133,8 @@ Response `200 OK`: `ShareDto[]` — по одному на получателя 
 
 | Метод | Ответ |
 | --- | --- |
-| `GET /s/{token}` | Ссылка на файл — байты (`inline` для JPEG/PNG/WebP, иначе `attachment`), Range/206. Ссылка на папку — временно JSON `PublicResourceDto`; HTML-страница — этап 8.6 |
+| `GET /s/{token}` | Ссылка на файл — байты (`inline` для JPEG/PNG/WebP, иначе `attachment`), Range/206. Ссылка на папку — статическая HTML-страница просмотра (`text/html;charset=UTF-8`), содержимое она читает через API ниже. Отказ: при `Accept: text/html` — HTML-страница 404, иначе JSON 404 |
+| `GET /s/assets/link.js`, `/s/assets/link.css` | Скрипт и стили страницы, без входа |
 | `GET /api/v1/public/s/{token}` | `PublicResourceDto`: `{"type":"FILE","id":42,"name":"a.jpg","file":{"id":42,"name":"a.jpg","mimeType":"image/jpeg","size":1024,"fileType":"IMAGE"},"expiresAt":null}`; у папки `file` = null |
 | `GET /api/v1/public/s/{token}/folders/{id}/children` | `[{"id":13,"name":"Day 1"}]` |
 | `GET /api/v1/public/s/{token}/files?folderId=&page=&size=&sort=` | `PageResponse<PublicFileDto>`; `sort` — как у `GET /api/v1/files` |
@@ -141,6 +142,6 @@ Response `200 OK`: `ShareDto[]` — по одному на получателя 
 | `GET /api/v1/public/s/{token}/files/{id}/view` | Байты, `inline` для JPEG/PNG/WebP, иначе `attachment` |
 | `GET /api/v1/public/s/{token}/files/{id}/thumbnail` | JPEG-миниатюра, ETag/304; 415/422/503 — как у владельца |
 
-Заголовки всех публичных ответов, включая ошибки: `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `X-Robots-Tag: noindex, nofollow`. Кроме того, `Content-Security-Policy: default-src 'none'; sandbox` — у всех ответов, кроме показа JPEG/PNG/WebP в браузере (`inline`): такое изображение исполнить нельзя, а строгая политика ломает встроенный просмотр изображений браузера. Заголовок `Authorization` на публичных маршрутах не проверяется.
+Заголовки всех публичных ответов, включая ошибки: `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `X-Robots-Tag: noindex, nofollow`. Кроме того, `Content-Security-Policy: default-src 'none'; sandbox` — у всех ответов, кроме показа JPEG/PNG/WebP в браузере (`inline`): такое изображение исполнить нельзя, а строгая политика ломает встроенный просмотр изображений браузера. HTML-страницы папки и 404 (`text/html` без `Content-Disposition`) получают `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`. Заголовок `Authorization` на публичных маршрутах не проверяется.
 
 Любой отказ — недействительный, отозванный или истёкший токен, заблокированный владелец, объект вне ссылки — `404 {"code":"NOT_FOUND","message":"Not found"}`. POST/PUT/PATCH/DELETE на публичных маршрутах — 401.

@@ -25,6 +25,10 @@ import java.util.Set;
  * скриптов и в sandbox. Изображение JPEG/PNG/WebP, которое браузер показывает сам (inline), исполнить нельзя — тип
  * определён Server по содержимому, nosniff запрещает его переопределять, — а строгая политика ломает встроенный
  * просмотр изображений браузера (стили и масштабирование). Поэтому у такого ответа CSP нет.
+ * <p>
+ * HTML без Content-Disposition выдают только собственные страницы Server (просмотр папки, 404): файлы всегда идут с
+ * Content-Disposition. Странице нужен свой скрипт, поэтому её политика разрешает только ресурсы и запросы того же
+ * адреса, без inline-скриптов и стилей; sandbox не подходит — скрипт в нём теряет origin и доступ к публичным API.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 1)
@@ -33,6 +37,8 @@ public class PublicResponseHeadersFilter extends OncePerRequestFilter {
     public static final String DIRECT_PREFIX = "/s/";
     public static final String API_PREFIX = "/api/v1/public/";
     static final String STRICT_CSP = "default-src 'none'; sandbox";
+    static final String PAGE_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; "
+            + "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
     private static final String CSP = "Content-Security-Policy";
     private static final Set<String> VIEWABLE_IMAGES = Set.of("image/jpeg", "image/png", "image/webp");
 
@@ -82,19 +88,26 @@ public class PublicResponseHeadersFilter extends OncePerRequestFilter {
                 return;
             }
             applied = true;
-            if (!isViewableImage()) {
+            if (isServerPage()) {
+                setHeader(CSP, PAGE_CSP);
+            } else if (!isViewableImage()) {
                 setHeader(CSP, STRICT_CSP);
             }
         }
 
+        private boolean isServerPage() {
+            return "text/html".equals(mime()) && getHeader(HttpHeaders.CONTENT_DISPOSITION) == null;
+        }
+
         private boolean isViewableImage() {
-            String type = getContentType();
             String disposition = getHeader(HttpHeaders.CONTENT_DISPOSITION);
-            if (type == null || disposition == null) {
-                return false;
-            }
-            String mime = type.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
-            return VIEWABLE_IMAGES.contains(mime) && disposition.toLowerCase(Locale.ROOT).startsWith("inline");
+            return disposition != null && VIEWABLE_IMAGES.contains(mime())
+                    && disposition.toLowerCase(Locale.ROOT).startsWith("inline");
+        }
+
+        private String mime() {
+            String type = getContentType();
+            return type == null ? null : type.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
         }
     }
 }

@@ -44,6 +44,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PublicLinkIntegrationTest extends AbstractIntegrationTest {
 
     private static final String PASSWORD = "pass1";
+    private static final String STRICT_CSP = "default-src 'none'; sandbox";
+    // Страница папки: только скрипты, стили, изображения и запросы того же адреса.
+    private static final String PAGE_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; "
+            + "connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
     private static final byte[] A_BYTES = "public link content".getBytes(StandardCharsets.UTF_8);
 
     @Autowired
@@ -212,7 +216,7 @@ class PublicLinkIntegrationTest extends AbstractIntegrationTest {
     void folderLinkOpensOnlyItsSubtreeWithMinimalData() throws Exception {
         String token = linkToken(folder(sharedId));
 
-        String root = anonymous(get("/s/{token}", token))
+        String root = anonymous(get("/api/v1/public/s/{token}", token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.type").value("FOLDER"))
                 .andExpect(jsonPath("$.id").value(sharedId))
@@ -247,6 +251,75 @@ class PublicLinkIntegrationTest extends AbstractIntegrationTest {
         anonymous(get("/api/v1/public/s/{token}/files/{id}/download", token, sFileId)).andExpect(status().isOk());
         moveFile(nFileId, siblingId);
         anonymous(get("/api/v1/public/s/{token}/files/{id}/download", token, nFileId)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void folderLinkOpensStaticBrowserPageWithOwnCsp() throws Exception {
+        // Имя со спецсимволами (< > " в именах папок запрещены, сущности — нет): страница его не содержит,
+        // API отдаёт как данные, скрипт выводит текстом.
+        String hostile = "Фото &lt;img src=x onerror=alert(1)&gt; & 'q'";
+        Long hostileId = createFolder(ownerToken, sharedId, hostile).get("id").asLong();
+        String token = linkToken(folder(sharedId));
+
+        String page = anonymous(get("/s/{token}", token).accept(MediaType.TEXT_HTML)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer not-a-jwt"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("text/html;charset=UTF-8"))
+                .andExpect(header().string("Content-Security-Policy", PAGE_CSP))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(header().string("Referrer-Policy", "no-referrer"))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
+                .andExpect(header().string("X-Robots-Tag", "noindex, nofollow"))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(page).contains("assets/link.js", "assets/link.css").doesNotContain("Shared", "onerror", token, "<style", "http");
+        // Страница без inline-скриптов: CSP не разрешает их, весь код — во внешнем файле того же адреса.
+        assertThat(page.replace("<script src=\"assets/link.js\" defer></script>", "")).doesNotContain("<script");
+        // Без Accept: text/html — тоже страница: тип ресурса определяет Server, а не клиент.
+        anonymous(get("/s/{token}", token)).andExpect(content().contentType("text/html;charset=UTF-8"));
+        anonymous(get("/api/v1/public/s/{token}/folders/{id}/children", token, sharedId))
+                .andExpect(jsonPath("$[?(@.id == %d)].name".formatted(hostileId)).value(hostile));
+
+        // Ссылка на файл в браузере — прежнее поведение 8.5.
+        anonymous(get("/s/{token}", linkToken(file(aFileId))).accept(MediaType.TEXT_HTML))
+                .andExpect(content().bytes(A_BYTES))
+                .andExpect(header().string(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"a.txt\""))
+                .andExpect(header().string("Content-Security-Policy", STRICT_CSP));
+
+        // Отозванная ссылка: браузер получает простую страницу 404 без скрипта и сведений о ресурсе, API — JSON.
+        perform(delete("/api/v1/shares/links").param("folderId", sharedId.toString())
+                .header(HttpHeaders.AUTHORIZATION, authHeader(ownerToken)))
+                .andExpect(status().isNoContent());
+        String notFound = anonymous(get("/s/{token}", token).accept(MediaType.TEXT_HTML))
+                .andExpect(status().isNotFound())
+                .andExpect(content().contentType("text/html;charset=UTF-8"))
+                .andExpect(header().string("Content-Security-Policy", PAGE_CSP))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(notFound).contains("Ссылка недоступна").doesNotContain("<script", "Shared", token);
+        anonymous(get("/s/{token}", token)).andExpect(status().isNotFound()).andExpect(jsonPath("$.message").value("Not found"));
+        anonymous(get("/api/v1/public/s/{token}/folders/{id}/children", token, sharedId)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void pageAssetsArePublicStaticAndSafe() throws Exception {
+        String script = anonymous(get("/s/assets/link.js"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith("text/javascript"))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        String style = anonymous(get("/s/assets/link.css"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith("text/css"))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        // Имена выводятся только текстом; внешних адресов, eval и записи в консоль нет.
+        assertThat(script).contains("textContent")
+                .doesNotContain("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function",
+                        "console.", "http:", "https:", "localStorage");
+        assertThat(style).doesNotContain("http:", "https:", "@import", "url(");
+        assertThat(script + style).doesNotContain(linkProperties.getLinkKey());
+        // Статика открыта только в /s/assets: остальные ресурсы Server по-прежнему требуют входа.
+        anonymous(get("/css/style.css")).andExpect(status().isUnauthorized());
+        anonymous(get("/s/assets/missing.js")).andExpect(status().isNotFound());
     }
 
     @Test

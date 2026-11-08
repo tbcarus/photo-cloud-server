@@ -49,9 +49,9 @@ public class SecurityConfig {
                                 "/swagger-ui/**", "/swagger-resources/*", "/v3/api-docs/**").permitAll()
                         // Публичные ссылки: анонимно только чтение; право проверяет токен в LinkAccess.
                         .requestMatchers(HttpMethod.GET, PublicLinkController.DIRECT_URL, PublicLinkController.BASE_URL + "/**",
-                                PublicLinkController.BASE_URL).permitAll()
+                                PublicLinkController.BASE_URL, PublicLinkController.ASSETS_URL).permitAll()
                         .requestMatchers(HttpMethod.HEAD, PublicLinkController.DIRECT_URL, PublicLinkController.BASE_URL + "/**",
-                                PublicLinkController.BASE_URL).permitAll()
+                                PublicLinkController.BASE_URL, PublicLinkController.ASSETS_URL).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(ex -> ex
                 .authenticationEntryPoint(authenticationEntryPoint) // 401

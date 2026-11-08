@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <meta name="robots" content="noindex, nofollow">
+    <title>PhotoCloud</title>
+    <!-- Адреса относительные: страница открыта как /s/{token}, ресурсы лежат в /s/assets/. -->
+    <link rel="stylesheet" href="assets/link.css">
+    <script src="assets/link.js" defer></script>
+</head>
+<body>
+<header class="top">PhotoCloud</header>
+<main>
+    <nav id="crumbs" class="crumbs" aria-label="Путь"></nav>
+    <h1 id="title"></h1>
+    <div id="status" class="status" role="status">Загрузка…</div>
+    <div id="content" hidden>
+        <ul id="folders" class="list"></ul>
+        <ul id="files" class="list"></ul>
+        <p id="empty" class="status" hidden>Папка пуста</p>
+        <div class="more">
+            <button id="more" type="button" hidden>Показать ещё</button>
+            <p id="more-error" class="error" hidden></p>
+        </div>
+    </div>
+</main>
+</body>
+</html>

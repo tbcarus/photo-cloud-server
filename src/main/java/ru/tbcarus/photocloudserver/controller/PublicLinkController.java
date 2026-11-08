@@ -3,6 +3,7 @@ package ru.tbcarus.photocloudserver.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ContentDisposition;
@@ -15,6 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import ru.tbcarus.photocloudserver.exception.PublicLinkNotFoundException;
 import ru.tbcarus.photocloudserver.model.FileItem;
 import ru.tbcarus.photocloudserver.model.Folder;
 import ru.tbcarus.photocloudserver.model.StoredObject;
@@ -32,6 +34,7 @@ import ru.tbcarus.photocloudserver.service.thumbnail.ThumbnailService;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -45,6 +48,8 @@ import java.util.Set;
 public class PublicLinkController {
 
     public static final String DIRECT_URL = "/s/{token}";
+    // CSS и JS страницы папки: static/s/assets, отдаются обычной раздачей статики Spring Boot.
+    public static final String ASSETS_URL = "/s/assets/**";
     public static final String BASE_URL = ApiPaths.API_V1 + "/public/s/{token}";
     public static final String CHILDREN_URL = BASE_URL + "/folders/{id}/children";
     public static final String FILES_URL = BASE_URL + "/files";
@@ -54,6 +59,9 @@ public class PublicLinkController {
 
     // В браузере показываются только изображения, которые нельзя исполнить; остальное (в том числе HTML и SVG) скачивается.
     private static final Set<String> INLINE_TYPES = Set.of("image/jpeg", "image/png", "image/webp");
+    private static final MediaType HTML = new MediaType(MediaType.TEXT_HTML, StandardCharsets.UTF_8);
+    private static final Resource FOLDER_PAGE = new ClassPathResource("public-link/folder.html");
+    private static final Resource NOT_FOUND_PAGE = new ClassPathResource("public-link/not-found.html");
 
     private final LinkAccess linkAccess;
     private final FolderRepository folderRepository;
@@ -63,16 +71,26 @@ public class PublicLinkController {
 
     /**
      * Прямая ссылка. Файл: изображение JPEG/PNG/WebP — inline, остальное — attachment, с Range.
-     * Папка: до HTML-страницы этапа 8.6 — то же описание корня, что у {@link #describe}.
+     * Папка: статическая страница просмотра; содержимое она получает через публичные API ниже, каждое из которых
+     * снова проверяет ссылку. Отказ браузеру (Accept: text/html) — простая HTML-страница 404, остальным — JSON.
      */
     @Operation(summary = "Open public link")
     @GetMapping(DIRECT_URL)
-    public ResponseEntity<?> open(@PathVariable String token) throws IOException {
-        LinkAccess.Grant grant = linkAccess.resolve(token);
+    public ResponseEntity<?> open(@PathVariable String token,
+                                  @RequestHeader(value = HttpHeaders.ACCEPT, required = false) String accept) throws IOException {
+        LinkAccess.Grant grant;
+        try {
+            grant = linkAccess.resolve(token);
+        } catch (PublicLinkNotFoundException e) {
+            if (accept != null && accept.toLowerCase(Locale.ROOT).contains(MediaType.TEXT_HTML_VALUE)) {
+                return page(HttpStatus.NOT_FOUND, NOT_FOUND_PAGE);
+            }
+            throw e;
+        }
         if (grant.file() != null) {
             return serve(grant.file(), true);
         }
-        return ResponseEntity.ok(describe(grant));
+        return page(HttpStatus.OK, FOLDER_PAGE);
     }
 
     @Operation(summary = "Describe public link target")
@@ -132,6 +150,11 @@ public class PublicLinkController {
                 .contentType(MediaType.IMAGE_JPEG)
                 .eTag(etag)
                 .body(thumbnailService.generate(file));
+    }
+
+    // Страницы не содержат данных пользователя: имена выводит скрипт как текст, поэтому HTML можно отдавать как есть.
+    private static ResponseEntity<Resource> page(HttpStatus status, Resource page) {
+        return ResponseEntity.status(status).contentType(HTML).body(page);
     }
 
     private PublicResourceDto describe(LinkAccess.Grant grant) {
