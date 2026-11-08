@@ -1,6 +1,6 @@
 # Share API contract
 
-Документ описывает контракт USER-доступов. Все endpoint-ы требуют `Authorization: Bearer <accessToken>`. Поведение и правила — System SPEC [SHARING-USER-MANAGE](../../system-spec/docs/spec/system/06-sharing-and-access.md#sharing-user-manage), [SHARED-WITH-ME](../../system-spec/docs/spec/system/05-file-library.md#shared-with-me), чтение по доступу — [ACCESS-READ](../../system-spec/docs/spec/system/06-sharing-and-access.md#access-read).
+Документ описывает контракт USER-доступов и публичных ссылок (LINK). Endpoint-ы USER-доступов и управления ссылками требуют `Authorization: Bearer <accessToken>`; публичные endpoint-ы ссылок работают без него (раздел «Публичные ссылки (LINK)»). Поведение и правила — System SPEC [SHARING-USER-MANAGE](../../system-spec/docs/spec/system/06-sharing-and-access.md#sharing-user-manage), [SHARED-WITH-ME](../../system-spec/docs/spec/system/05-file-library.md#shared-with-me), чтение по доступу — [ACCESS-READ](../../system-spec/docs/spec/system/06-sharing-and-access.md#access-read).
 
 Получатель только читает: children и список файлов папки, metadata, download и thumbnail (`api-folder-contract.md`, `api-file-contract.md`). Операции изменения чужих объектов дают `404`.
 
