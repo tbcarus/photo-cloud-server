@@ -1,6 +1,6 @@
 # Notification API contract
 
-Документ описывает контракт уведомлений текущего пользователя. Все endpoint-ы требуют `Authorization: Bearer <accessToken>`, без него — `401`. Поведение и правила — System SPEC [NOTIFICATIONS-READ](../../system-spec/docs/spec/system/06-sharing-and-access.md#notifications-read), модель — [Notification](../../system-spec/docs/spec/system/01-system-model.md#notification).
+Документ описывает контракт уведомлений текущего пользователя. Все endpoint-ы требуют `Authorization: Bearer <accessToken>`, без него — `401`. Поведение и правила — System SPEC [NOTIFICATIONS-READ](../../system-spec/docs/spec/system/08-notifications.md#notifications-read), модель — [Notification](../../system-spec/docs/spec/system/01-system-model.md#notification).
 
 Уведомления создаёт только Server: сейчас — `SHARE_GRANTED` при создании нового USER-доступа (`POST /api/v1/shares/users`, `api-share-contract.md`). Push и email нет.
 
