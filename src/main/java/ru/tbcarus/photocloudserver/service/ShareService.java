@@ -53,6 +53,7 @@ public class ShareService {
     private final FileItemService fileItemService;
     private final FileItemMapper fileItemMapper;
     private final LinkTokenService linkTokens;
+    private final NotificationService notificationService;
 
     // Все получатели или никто: недопустимый адрес отклоняет операцию до записи.
     // Под блокировкой дерева владельца: удаление ресурса не пройдёт между проверкой и созданием доступа,
@@ -67,7 +68,7 @@ public class ShareService {
         Map<Long, User> recipients = resolveRecipients(owner, request.emails());
 
         for (User recipient : recipients.values()) {
-            // Повторная выдача обновляет срок, в том числе продлевает истёкший доступ.
+            // Повторная выдача обновляет срок, в том числе продлевает истёкший доступ, и уведомления не создаёт.
             int updated = shareRepository.updateUserShareExpiry(
                     owner.getId(), resource.folderId(), resource.fileId(), recipient.getId(), expiresAt);
             if (updated == 0) {
@@ -79,6 +80,12 @@ public class ShareService {
                         .recipient(recipient)
                         .expiresAt(expiresAt)
                         .build());
+                // В той же транзакции: отклонённая или откаченная выдача не оставляет уведомлений.
+                if (resource.folder() != null) {
+                    notificationService.shareGranted(recipient, resource.folder());
+                } else {
+                    notificationService.shareGranted(recipient, resource.file());
+                }
             }
         }
         shareRepository.flush();

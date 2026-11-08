@@ -211,6 +211,12 @@ public class GlobalExceptionHandler {
                 .body(error(ErrorCode.NOT_FOUND, e.getMessage()));
     }
 
+    @ExceptionHandler(NotificationNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNotificationNotFound(NotificationNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(error(ErrorCode.NOT_FOUND, e.getMessage()));
+    }
+
     // Ни один доступ не создан: клиент видит все отклонённые адреса сразу.
     @ExceptionHandler(ShareRecipientException.class)
     public ResponseEntity<ErrorResponse> handleShareRecipient(ShareRecipientException e) {
