@@ -191,6 +191,20 @@ public class GlobalExceptionHandler {
                 .body(error(ErrorCode.FOLDER_MANAGED, e.getMessage()));
     }
 
+    @ExceptionHandler(ShareNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleShareNotFound(ShareNotFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(error(ErrorCode.NOT_FOUND, e.getMessage()));
+    }
+
+    // Ни один доступ не создан: клиент видит все отклонённые адреса сразу.
+    @ExceptionHandler(ShareRecipientException.class)
+    public ResponseEntity<ErrorResponse> handleShareRecipient(ShareRecipientException e) {
+        ErrorResponse body = error(ErrorCode.SHARE_RECIPIENT_UNAVAILABLE, e.getMessage());
+        body.setFieldErrors(e.getRejected());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
     @ExceptionHandler(FolderOperationException.class)
     public ResponseEntity<ErrorResponse> handleFolderOperation(FolderOperationException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)

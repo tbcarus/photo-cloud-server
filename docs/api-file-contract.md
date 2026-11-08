@@ -341,7 +341,7 @@ Response `200 OK`:
 
 ## TODO
 
-- API выдачи и отзыва доступов, публичные ссылки; изменение чужих `FileItem` по доступу не допускается;
+- публичные ссылки (USER-доступы — `api-share-contract.md`); изменение чужих `FileItem` по доступу не допускается;
 - replace/overwrite;
 - auto-rename вида `file (1).jpg`;
 - soft delete/trash на базе `deletedAt`;

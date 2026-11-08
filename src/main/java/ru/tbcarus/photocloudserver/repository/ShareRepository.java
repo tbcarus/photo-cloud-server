@@ -1,11 +1,18 @@
 package ru.tbcarus.photocloudserver.repository;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 import ru.tbcarus.photocloudserver.model.Share;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface ShareRepository extends JpaRepository<Share, Long> {
@@ -64,4 +71,112 @@ public interface ShareRepository extends JpaRepository<Share, Long> {
             )
             """, nativeQuery = true)
     boolean existsActiveUserShareForFile(Long fileId, Long recipientId, Instant now);
+
+    // Управление USER-доступами: каждое условие включает владельца или получателя, поэтому чужой shareId неотличим от отсутствующего.
+    // Изменения — массовыми запросами: параллельное удаление даёт 0 строк, а не ошибку устаревшей сущности.
+
+    @EntityGraph(attributePaths = {"folder", "fileItem", "recipient"})
+    @Query("""
+            SELECT s FROM Share s
+            WHERE s.owner.id = :ownerId AND s.kind = ru.tbcarus.photocloudserver.model.ShareKind.USER
+              AND (:folderId IS NULL OR s.folder.id = :folderId)
+              AND (:fileId IS NULL OR s.fileItem.id = :fileId)
+            """)
+    Page<Share> findUserSharesByOwner(Long ownerId, Long folderId, Long fileId, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"folder", "fileItem", "recipient"})
+    @Query("""
+            SELECT s FROM Share s
+            WHERE s.id = :id AND s.owner.id = :ownerId AND s.kind = ru.tbcarus.photocloudserver.model.ShareKind.USER
+            """)
+    Optional<Share> findUserShareByIdAndOwner(Long id, Long ownerId);
+
+    @EntityGraph(attributePaths = {"folder", "fileItem", "recipient"})
+    @Query("""
+            SELECT s FROM Share s
+            WHERE s.owner.id = :ownerId AND s.kind = ru.tbcarus.photocloudserver.model.ShareKind.USER
+              AND s.recipient.id IN :recipientIds
+              AND (:folderId IS NULL OR s.folder.id = :folderId)
+              AND (:fileId IS NULL OR s.fileItem.id = :fileId)
+            """)
+    List<Share> findUserSharesForRecipients(Long ownerId, Long folderId, Long fileId, Collection<Long> recipientIds);
+
+    // Без clearAutomatically: grant вызывает его в цикле, и очистка отсоединяла бы папку, файл и получателей,
+    // уже загруженных в транзакции. Новые Share ссылались бы на отсоединённые объекты, а итоговое чтение
+    // создало бы для тех же строк вторые экземпляры в одном контексте. Обновляемые Share до этого в контекст
+    // не загружаются, поэтому устаревших управляемых копий не остаётся.
+    @Modifying(flushAutomatically = true)
+    @Query("""
+            UPDATE Share s SET s.expiresAt = :expiresAt
+            WHERE s.owner.id = :ownerId AND s.kind = ru.tbcarus.photocloudserver.model.ShareKind.USER
+              AND s.recipient.id = :recipientId
+              AND (:folderId IS NULL OR s.folder.id = :folderId)
+              AND (:fileId IS NULL OR s.fileItem.id = :fileId)
+            """)
+    int updateUserShareExpiry(Long ownerId, Long folderId, Long fileId, Long recipientId, Instant expiresAt);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            UPDATE Share s SET s.expiresAt = :expiresAt
+            WHERE s.id = :id AND s.owner.id = :ownerId AND s.kind = ru.tbcarus.photocloudserver.model.ShareKind.USER
+            """)
+    int updateExpiryByIdAndOwner(Long id, Long ownerId, Instant expiresAt);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            DELETE FROM Share s
+            WHERE s.id = :id AND s.owner.id = :ownerId AND s.kind = ru.tbcarus.photocloudserver.model.ShareKind.USER
+            """)
+    int deleteUserShareByIdAndOwner(Long id, Long ownerId);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            DELETE FROM Share s
+            WHERE s.owner.id = :ownerId AND s.kind = ru.tbcarus.photocloudserver.model.ShareKind.USER
+              AND (:folderId IS NULL OR s.folder.id = :folderId)
+              AND (:fileId IS NULL OR s.fileItem.id = :fileId)
+            """)
+    int deleteUserSharesOfResource(Long ownerId, Long folderId, Long fileId);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            DELETE FROM Share s
+            WHERE s.id = :id AND s.recipient.id = :recipientId AND s.kind = ru.tbcarus.photocloudserver.model.ShareKind.USER
+            """)
+    int deleteUserShareByIdAndRecipient(Long id, Long recipientId);
+
+    // Прямые действующие доступы получателя по тем же условиям, что и existsActiveUserShare*: иначе в списке
+    // оказался бы объект, который read-endpoints не откроют.
+    @EntityGraph(attributePaths = {"owner", "folder", "fileItem", "fileItem.storedObject", "fileItem.metadata"})
+    @Query(value = """
+            SELECT s FROM Share s
+            JOIN s.owner o
+            LEFT JOIN s.folder f
+            LEFT JOIN s.fileItem fi
+            LEFT JOIN fi.storedObject so
+            WHERE s.kind = ru.tbcarus.photocloudserver.model.ShareKind.USER
+              AND s.recipient.id = :recipientId
+              AND (s.expiresAt IS NULL OR :now < s.expiresAt)
+              AND o.enabled = true AND o.banned = false
+              AND ((f.id IS NOT NULL AND f.user.id = o.id
+                    AND f.folderType NOT IN (ru.tbcarus.photocloudserver.model.FolderType.ROOT,
+                                             ru.tbcarus.photocloudserver.model.FolderType.AUTO_UPLOADS))
+                OR (fi.id IS NOT NULL AND fi.user.id = o.id AND so.user.id = o.id))
+            """,
+            countQuery = """
+            SELECT count(s) FROM Share s
+            JOIN s.owner o
+            LEFT JOIN s.folder f
+            LEFT JOIN s.fileItem fi
+            LEFT JOIN fi.storedObject so
+            WHERE s.kind = ru.tbcarus.photocloudserver.model.ShareKind.USER
+              AND s.recipient.id = :recipientId
+              AND (s.expiresAt IS NULL OR :now < s.expiresAt)
+              AND o.enabled = true AND o.banned = false
+              AND ((f.id IS NOT NULL AND f.user.id = o.id
+                    AND f.folderType NOT IN (ru.tbcarus.photocloudserver.model.FolderType.ROOT,
+                                             ru.tbcarus.photocloudserver.model.FolderType.AUTO_UPLOADS))
+                OR (fi.id IS NOT NULL AND fi.user.id = o.id AND so.user.id = o.id))
+            """)
+    Page<Share> findActiveSharedWith(Long recipientId, Instant now, Pageable pageable);
 }
