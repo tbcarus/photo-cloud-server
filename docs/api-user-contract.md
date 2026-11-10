@@ -20,7 +20,7 @@
 | GET | `/api/v1/auth/password/reset/page?code=...` |
 | POST | `/api/v1/auth/password/reset/page` |
 
-Все остальные endpoint-ы требуют `Authorization: Bearer <accessToken>`.
+Остальные пользовательские endpoint-ы этого документа требуют `Authorization: Bearer <accessToken>`. Вне этого контракта без JWT также доступны GET/HEAD публичных ссылок и их статических ресурсов ([Sharing API](api-share-contract.md)), а также маршруты документации `/swagger-ui/**`, `/swagger-resources/*`, `/v3/api-docs/**`.
 
 Сроки задаются конфигурацией: `token.access-ttl-minutes` (по умолчанию 1440 — 24 часа), `token.refresh-ttl-days` (180) и `token.refresh-rotation-threshold-days` (30) — порог замены refresh token. Refresh token хранится в БД и может быть отозван.
 

@@ -20,7 +20,7 @@
 
 - логическая папка пользователя;
 - имеет `parent`;
-- типы: `ROOT`, `CAMERA`, `USER`;
+- типы: `ROOT`, `CAMERA`, `AUTO_UPLOADS`, `USER`;
 - дерево папок хранится в БД.
 
 `FileItem`:
@@ -65,6 +65,8 @@
 
 Пользовательские папки (`USER`) можно создавать в `ROOT` и внутри других `USER`-папок. Внутри `CAMERA` создавать папки нельзя. Системные папки нельзя rename/move/delete.
 
+`AUTO_UPLOADS` — системный контейнер корней автоматических источников. Регистрация источника создаёт в нём `USER`-папку; контейнер не принимает файлы и обычное создание папок. Запись в активное дерево требует соответствующего `backupSource`, ручные изменения ограничены. Контракт регистрации, отключения и защиты дерева — [Folder API](api-folder-contract.md).
+
 Удаление `USER`-папки удаляет всё её содержимое.
 
 ## 5. Загрузка файлов
@@ -96,8 +98,8 @@ Upload pipeline:
 `upload`:
 
 - создает логическую запись `FileItem`;
-- дубль определяется как `user + folder + checksum`;
-- повторная загрузка того же файла в ту же папку идемпотентно возвращает существующий `FileItem`;
+- в `CAMERA` дубль определяется как `user + folder + checksum`, независимо от имени;
+- в `ROOT`/`USER` существующий `FileItem` возвращается только при совпадении имени (без учета регистра) и checksum; те же байты под другим свободным именем создают новый файл, а занятое имя с другим содержимым даёт `409`;
 - тот же checksum в другой папке дублем не считается: создаются новый `StoredObject` + новый `FileItem`;
 - `StoredObject` больше не переиспользуется между независимыми загрузками в разные папки.
 
@@ -124,7 +126,7 @@ Upload pipeline:
 - в одной транзакции под блокировкой строки `ROOT` удаляются записи и верхний объект переносится в `.pending-delete`, байты удаляет `PendingDeleteCleaner`;
 - если текущий пользователь не владелец `StoredObject`, удаляется только его `FileItem`;
 - если текущий пользователь владелец `StoredObject`, удаляются все `FileItem` на этот объект, затем `StoredObject`;
-- благодаря модели `user + folder + checksum` независимые загрузки в разные папки имеют разные `StoredObject`, поэтому удаление файла в одной папке не удаляет файл из другой папки;
+- независимые загрузки в разные папки имеют разные `StoredObject`, поэтому удаление файла в одной папке не удаляет файл из другой папки;
 - сейчас это hard delete, не trash.
 
 ## 7. Checksum sync
@@ -152,17 +154,18 @@ Upload pipeline:
 - Refresh token: JWT с `token_type=REFRESH`, хранится в таблице refresh tokens, срок `token.refresh-ttl-days` (по умолчанию 180 дней). Когда до истечения остаётся не больше `token.refresh-rotation-threshold-days` (30 дней), refresh заменяет его новым.
 - Refresh token можно отозвать через logout/logout-all/logout-others.
 - Защищенные endpoint-ы требуют `Authorization: Bearer <accessToken>`.
-- Публичные endpoint-ы ограничены test, register, login, refresh и password reset flow.
+- Без JWT доступны test, register/confirm/resend, login, refresh и password reset flow, документация Swagger/OpenAPI, а также GET/HEAD публичных ссылок и их статических ресурсов. Чтение ресурса по ссылке дополнительно проверяет действующий LINK-доступ ([Sharing API](api-share-contract.md)).
 
 `401` используется для отсутствующего/невалидного access token и invalid credentials/refresh token. `403` используется для revoked refresh token и refresh token ownership error.
 
+USER-доступы и публичные LINK-доступы реализованы для чтения; изменение объектов остаётся правом владельца ([Sharing API](api-share-contract.md)).
+
 ## 9. Текущие ограничения и TODO
 
-- sharing и модель прав доступа;
 - soft delete/trash на базе `FileItem.deletedAt`;
 - replace/overwrite;
 - auto-rename при конфликте имени;
-- versioning;
+- общее versioning; архивирование изменённых файлов автоматического источника уже выполняет Android через rename и upload ([BACKUP-SOURCE-ARCHIVE](../../system-spec/docs/spec/system/04-backup-and-sync.md#backup-source-archive));
 - device sync и полноценные sync sessions;
 - link-existing для создания `FileItem` на существующий `StoredObject` без upload.
 
@@ -174,6 +177,6 @@ Upload pipeline:
 - Дубль файла определяется как `user + folder + checksum` только в `CAMERA`; уникального ограничения БД нет, duplicate защищает блокировка строки `ROOT` пользователя.
 - Upload идемпотентен (в `CAMERA` по checksum, в `ROOT`/`USER` по имени и checksum) и не переиспользует `StoredObject` между независимыми загрузками.
 - Copy создает независимую физическую копию и новый `StoredObject`.
-- Move и rename не трогают физический файл.
+- Move и rename файла библиотеки меняют его физический путь; у файла, хранящегося по ключу `CAMERA`, физический путь остаётся прежним.
 - `CAMERA` допускает одинаковые имена файлов.
 - В `ROOT` и `USER` файлы и папки делят одно пространство имён без учета регистра (`lower()` PostgreSQL); уникальность имён файлов обеспечивается проверкой под блокировкой строки `ROOT`.
