@@ -327,7 +327,8 @@ class LibraryAcceptanceConcurrencyIntegrationTest extends LibraryAcceptanceSuppo
         Long rootId = getRootId(token);
         Long target = createFolder(token, rootId, "Target").get("id").asLong();
         FileItemDto source = upload(token, "source.txt", "text/plain", "source".getBytes(), rootId);
-        try (RowGate gate = holdRoot(rootId)) {
+        // Copy открывает источник под общей блокировкой: в очередь должна встать её публикация.
+        try (RowGate gate = holdRootShared(rootId)) {
             List<MockHttpServletResponse> responses = runQueued(gate, List.of(
                     jsonCall(post("/api/v1/files/{id}/copy", source.getId()), copyBody(target, "busy.txt")),
                     uploadCall("BUSY.TXT", "other".getBytes(), target)));
@@ -343,7 +344,8 @@ class LibraryAcceptanceConcurrencyIntegrationTest extends LibraryAcceptanceSuppo
         Long rootId = getRootId(token);
         Long target = createFolder(token, rootId, "Target").get("id").asLong();
         FileItemDto source = upload(token, "source.txt", "text/plain", "source".getBytes(), rootId);
-        try (RowGate gate = holdRoot(rootId)) {
+        // Copy открывает источник под общей блокировкой: в очередь должны встать их публикации.
+        try (RowGate gate = holdRootShared(rootId)) {
             List<MockHttpServletResponse> responses = runQueued(gate, List.of(
                     jsonCall(post("/api/v1/files/{id}/copy", source.getId()), copyBody(target, "copy.txt")),
                     jsonCall(post("/api/v1/files/{id}/copy", source.getId()), copyBody(target, "COPY.txt"))));

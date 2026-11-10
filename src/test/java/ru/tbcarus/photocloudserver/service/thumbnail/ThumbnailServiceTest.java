@@ -4,7 +4,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.core.io.FileSystemResource;
 import ru.tbcarus.photocloudserver.exception.FileItemNotFoundException;
 import ru.tbcarus.photocloudserver.exception.ThumbnailBusyException;
 import ru.tbcarus.photocloudserver.exception.ThumbnailUnreadableException;
@@ -12,9 +11,11 @@ import ru.tbcarus.photocloudserver.exception.ThumbnailUnsupportedException;
 import ru.tbcarus.photocloudserver.model.FileItem;
 import ru.tbcarus.photocloudserver.model.StoredObject;
 import ru.tbcarus.photocloudserver.service.FileItemService;
+import ru.tbcarus.photocloudserver.service.storage.OpenedFile;
 
+import java.io.IOException;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -45,18 +47,21 @@ class ThumbnailServiceTest {
     private final ExecutorService executor = Executors.newFixedThreadPool(4);
     private ThumbnailProperties properties;
     private Path source;
+    private final List<OpenedFile> opened = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @BeforeEach
     void setUp() throws Exception {
         properties = ThumbnailGeneratorTest.properties();
         properties.setMaxConcurrent(2);
         source = Files.write(dir.resolve("photo.jpg"), new byte[]{1});
-        when(fileItemService.getDownloadResource(any())).thenReturn(new FileSystemResource(source));
+        when(fileItemService.openForRead(any())).thenAnswer(invocation -> open(invocation.getArgument(0)));
     }
 
     @AfterEach
     void stopExecutor() {
         executor.shutdownNow();
+        // Каждый открытый для миниатюры файл закрыт, в том числе после ошибок.
+        assertThat(opened).allMatch(file -> !file.channel().isOpen());
     }
 
     @Test
@@ -91,15 +96,15 @@ class ThumbnailServiceTest {
 
         assertThatThrownBy(() -> service.generate(file(1L, CHECKSUM, "image/heic")))
                 .isInstanceOf(ThumbnailUnsupportedException.class);
-        verify(fileItemService, never()).getDownloadResource(any());
-        verify(generator, never()).generate(any(), anyString());
+        verify(fileItemService, never()).openForRead(any());
+        verify(generator, never()).generate(any(FileChannel.class), anyString());
     }
 
     @Test
     void generationsWithinLimitRunConcurrentlyAndExtraRequestIsRejectedImmediately() throws Exception {
         CountDownLatch inside = new CountDownLatch(2);
         CountDownLatch release = new CountDownLatch(1);
-        when(generator.generate(any(), anyString())).thenAnswer(invocation -> {
+        when(generator.generate(any(FileChannel.class), anyString())).thenAnswer(invocation -> {
             inside.countDown();
             release.await(10, TimeUnit.SECONDS);
             return new byte[]{1};
@@ -129,33 +134,38 @@ class ThumbnailServiceTest {
     @Test
     void slotIsReleasedAfterGenerationError() throws Exception {
         properties.setMaxConcurrent(1);
-        when(generator.generate(any(), anyString()))
+        when(generator.generate(any(FileChannel.class), anyString()))
                 .thenThrow(new ThumbnailUnreadableException("broken"))
                 .thenThrow(new RuntimeException("unexpected"))
-                .thenThrow(new NoSuchFileException("photo.jpg"))
+                .thenThrow(new IOException("read failed"))
                 .thenReturn(new byte[]{7});
         ThumbnailService service = service();
         FileItem file = file(5L, CHECKSUM, "image/jpeg");
 
         assertThatThrownBy(() -> service.generate(file)).isInstanceOf(ThumbnailUnreadableException.class);
         assertThatThrownBy(() -> service.generate(file)).isInstanceOf(RuntimeException.class);
-        // Файл исчез после вычисления пути — как у download, 404.
-        assertThatThrownBy(() -> service.generate(file)).isInstanceOf(FileItemNotFoundException.class);
+        assertThatThrownBy(() -> service.generate(file)).isInstanceOf(IOException.class);
         assertThat(service.generate(file)).containsExactly(7);
     }
 
     @Test
     void missingFileDoesNotTakeSlot() throws Exception {
         properties.setMaxConcurrent(1);
-        when(fileItemService.getDownloadResource(any()))
-                .thenThrow(new FileItemNotFoundException(9L))
-                .thenReturn(new FileSystemResource(source));
-        when(generator.generate(any(), anyString())).thenReturn(new byte[]{3});
+        doThrow(new FileItemNotFoundException(9L))
+                .doAnswer(invocation -> open(invocation.getArgument(0)))
+                .when(fileItemService).openForRead(any());
+        when(generator.generate(any(FileChannel.class), anyString())).thenReturn(new byte[]{3});
         ThumbnailService service = service();
         FileItem file = file(9L, CHECKSUM, "image/jpeg");
 
         assertThatThrownBy(() -> service.generate(file)).isInstanceOf(FileItemNotFoundException.class);
         assertThat(service.generate(file)).containsExactly(3);
+    }
+
+    private OpenedFile open(FileItem file) throws IOException {
+        OpenedFile result = OpenedFile.open(file, source);
+        opened.add(result);
+        return result;
     }
 
     private ThumbnailService service() {

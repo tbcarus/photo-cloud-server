@@ -3,18 +3,16 @@ package ru.tbcarus.photocloudserver.service.thumbnail;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.CacheControl;
 import org.springframework.stereotype.Service;
-import ru.tbcarus.photocloudserver.exception.FileItemNotFoundException;
 import ru.tbcarus.photocloudserver.exception.ThumbnailBusyException;
 import ru.tbcarus.photocloudserver.exception.ThumbnailUnreadableException;
 import ru.tbcarus.photocloudserver.exception.ThumbnailUnsupportedException;
 import ru.tbcarus.photocloudserver.model.FileItem;
 import ru.tbcarus.photocloudserver.model.StoredObject;
 import ru.tbcarus.photocloudserver.service.FileItemService;
+import ru.tbcarus.photocloudserver.service.storage.OpenedFile;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.NoSuchFileException;
-import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
@@ -64,27 +62,26 @@ public class ThumbnailService {
 
     public byte[] generate(FileItem file) throws IOException {
         requireSupported(file);
-        // Путь вычисляется до занятия слота: отсутствующий файл не расходует лимит.
-        Path source = fileItemService.getDownloadResource(file).getFile().toPath();
-        if (!slots.tryAcquire()) {
-            throw new ThumbnailBusyException();
-        }
-        long startedAt = System.nanoTime();
-        try {
-            byte[] jpeg = generator.generate(source, file.getStoredObject().getDetectedMimeType());
-            log.debug("Миниатюра файла {}: {} байт за {} мс",
-                    file.getId(), jpeg.length, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt));
-            return jpeg;
-        } catch (NoSuchFileException e) {
-            // Файл удалили или переместили после вычисления пути: как у download — 404.
-            throw new FileItemNotFoundException(file.getId());
-        } catch (ThumbnailUnreadableException e) {
-            // Только тип ошибки: без пути и содержимого файла.
-            log.warn("Миниатюра файла {} не создана: {}", file.getId(),
-                    e.getCause() == null ? e.getMessage() : e.getCause().getClass().getSimpleName());
-            throw e;
-        } finally {
-            slots.release();
+        // Файл открывается до занятия слота: отсутствующий даёт 404 и не расходует лимит.
+        // Миниатюра строится из объекта, открытого по записи этого файла: ETag по checksum той же записи ей соответствует.
+        try (OpenedFile source = fileItemService.openForRead(file)) {
+            if (!slots.tryAcquire()) {
+                throw new ThumbnailBusyException();
+            }
+            long startedAt = System.nanoTime();
+            try {
+                byte[] jpeg = generator.generate(source.channel(), file.getStoredObject().getDetectedMimeType());
+                log.debug("Миниатюра файла {}: {} байт за {} мс",
+                        file.getId(), jpeg.length, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt));
+                return jpeg;
+            } catch (ThumbnailUnreadableException e) {
+                // Только тип ошибки: без пути и содержимого файла.
+                log.warn("Миниатюра файла {} не создана: {}", file.getId(),
+                        e.getCause() == null ? e.getMessage() : e.getCause().getClass().getSimpleName());
+                throw e;
+            } finally {
+                slots.release();
+            }
         }
     }
 

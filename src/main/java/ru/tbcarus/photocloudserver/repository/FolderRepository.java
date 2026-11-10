@@ -26,6 +26,11 @@ public interface FolderRepository extends JpaRepository<Folder, Long> {
     @Query("SELECT f FROM Folder f WHERE f.user.id = :userId AND f.parent IS NULL AND f.folderType = ru.tbcarus.photocloudserver.model.FolderType.ROOT")
     Optional<Folder> findRootByUserIdForUpdate(Long userId);
 
+    // Общий режим той же блокировки ROOT: чтения не ждут друг друга, а изменения дерева ждут их.
+    @Lock(LockModeType.PESSIMISTIC_READ)
+    @Query("SELECT f FROM Folder f WHERE f.user.id = :userId AND f.parent IS NULL AND f.folderType = ru.tbcarus.photocloudserver.model.FolderType.ROOT")
+    Optional<Folder> findRootByUserIdForShare(Long userId);
+
     // ON CONFLICT не обрывает внешнюю транзакцию: проигравший параллельный запрос просто перечитывает ROOT.
     @Modifying
     @Query(value = "INSERT INTO folder (user_id, name, folder_type) VALUES (:userId, :name, 'ROOT') ON CONFLICT DO NOTHING",

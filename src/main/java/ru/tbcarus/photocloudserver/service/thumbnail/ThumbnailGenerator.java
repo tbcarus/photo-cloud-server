@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 import ru.tbcarus.photocloudserver.exception.ThumbnailTooLargeException;
 import ru.tbcarus.photocloudserver.exception.ThumbnailUnreadableException;
 import ru.tbcarus.photocloudserver.exception.ThumbnailUnsupportedException;
+import ru.tbcarus.photocloudserver.service.storage.ChannelInputStream;
 
 import javax.imageio.IIOException;
 import javax.imageio.IIOImage;
@@ -26,14 +27,17 @@ import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
@@ -71,6 +75,13 @@ public class ThumbnailGenerator {
     }
 
     public byte[] generate(Path source, String mimeType) throws IOException {
+        try (FileChannel channel = openChannel(source)) {
+            return generate(channel, mimeType);
+        }
+    }
+
+    // Все чтения идут по одному открытому каналу: миниатюра относится к тому же объекту, что и проверенная запись.
+    public byte[] generate(FileChannel source, String mimeType) throws IOException {
         WebpLayout webp = WEBP.equals(mimeType) ? WebpLayout.read(source) : null;
         Decoded decoded = decode(source, mimeType, webp);
         int targetWidth = decoded.width();
@@ -90,11 +101,17 @@ public class ThumbnailGenerator {
     }
 
     Decoded decode(Path source, String mimeType, WebpLayout webp) throws IOException {
+        try (FileChannel channel = openChannel(source)) {
+            return decode(channel, mimeType, webp);
+        }
+    }
+
+    Decoded decode(FileChannel source, String mimeType, WebpLayout webp) throws IOException {
         if (!isSupported(mimeType)) {
             throw new ThumbnailUnsupportedException("Thumbnail is not supported for this file type");
         }
         ImageReader reader = reader(mimeType);
-        ImageInputStream input = open(source);
+        ImageInputStream input = new ChannelImageInputStream(source);
         try (input) {
             // ignoreMetadata: метаданные исходника не нужны и не накапливаются в памяти.
             reader.setInput(input, true, true);
@@ -138,16 +155,12 @@ public class ThumbnailGenerator {
         return readers.next();
     }
 
-    // ImageIO выдаёт любую ошибку открытия как IIOException: отсутствие файла проверяется отдельно.
-    private static ImageInputStream open(Path source) throws IOException {
+    // Отсутствующий файл и каталог — NoSuchFileException, а не ошибка декодирования.
+    private static FileChannel openChannel(Path source) throws IOException {
         if (!Files.isRegularFile(source)) {
             throw new NoSuchFileException(source.getFileName().toString());
         }
-        ImageInputStream input = ImageIO.createImageInputStream(source.toFile());
-        if (input == null) {
-            throw new IOException("Image input stream is not available");
-        }
-        return input;
+        return FileChannel.open(source, StandardOpenOption.READ);
     }
 
     private static BufferedImage onWhite(BufferedImage image) {
@@ -215,15 +228,11 @@ public class ThumbnailGenerator {
     }
 
     // Нечитаемый EXIF не мешает миниатюре: изображение остаётся без поворота.
-    private static int orientation(Path source, String mimeType, WebpLayout webp) {
+    private static int orientation(FileChannel source, String mimeType, WebpLayout webp) {
         try {
             Metadata metadata = switch (mimeType) {
-                case JPEG -> JpegMetadataReader.readMetadata(source.toFile(), List.of(new ExifReader()));
-                case PNG -> {
-                    try (InputStream input = Files.newInputStream(source)) {
-                        yield PngMetadataReader.readMetadata(input);
-                    }
-                }
+                case JPEG -> JpegMetadataReader.readMetadata(stream(source), List.of(new ExifReader()));
+                case PNG -> PngMetadataReader.readMetadata(stream(source));
                 default -> webpExif(webp);
             };
             ExifIFD0Directory directory = metadata.getFirstDirectoryOfType(ExifIFD0Directory.class);
@@ -234,6 +243,11 @@ public class ThumbnailGenerator {
             log.debug("EXIF-ориентация не прочитана: {}", e.getClass().getSimpleName());
         }
         return 1;
+    }
+
+    // Читатели метаданных берут данные малыми порциями: буфер избавляет от системного вызова на каждый байт.
+    private static InputStream stream(FileChannel source) throws IOException {
+        return new BufferedInputStream(new ChannelInputStream(source, source.size()));
     }
 
     private static Metadata webpExif(WebpLayout webp) {

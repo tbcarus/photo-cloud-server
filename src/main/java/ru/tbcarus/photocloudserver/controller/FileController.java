@@ -17,6 +17,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.context.request.RequestAttributes;
+import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.multipart.MultipartFile;
 import ru.tbcarus.photocloudserver.model.FileItem;
 import ru.tbcarus.photocloudserver.model.User;
@@ -29,6 +31,7 @@ import ru.tbcarus.photocloudserver.model.dto.MoveFileRequest;
 import ru.tbcarus.photocloudserver.model.dto.PageResponse;
 import ru.tbcarus.photocloudserver.model.dto.RenameFileRequest;
 import ru.tbcarus.photocloudserver.service.FileItemService;
+import ru.tbcarus.photocloudserver.service.storage.OpenedFile;
 import ru.tbcarus.photocloudserver.service.sync.ChecksumSyncService;
 import ru.tbcarus.photocloudserver.service.thumbnail.ThumbnailService;
 
@@ -129,13 +132,27 @@ public class FileController {
     // Скачивает физический объект, но имя отдаёт логическое originalName из FileItem.
     @Operation(summary = "Download file")
     @GetMapping(DOWNLOAD_URL)
-    public ResponseEntity<Resource> downloadFile(@PathVariable Long id, @AuthenticationPrincipal User user) throws IOException {
-        FileItem file = fileItemService.getReadableFile(id, user);
-        Resource resource = fileItemService.getDownloadResource(file);
+    public ResponseEntity<Resource> downloadFile(@PathVariable Long id, @AuthenticationPrincipal User user) {
+        OpenedFile source = closeAfterRequest(fileItemService.openForRead(fileItemService.getReadableFile(id, user)));
+        // Заголовки — по записи, под которой файл открыт: имя и MIME относятся к отдаваемым байтам.
+        FileItem file = source.file();
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(file.getStoredObject().getDetectedMimeType()))
                 .header(HttpHeaders.CONTENT_DISPOSITION, attachment(file.getOriginalName()))
-                .body(resource);
+                .body(source);
+    }
+
+    // Канал закрывается по завершении запроса, после записи тела: HEAD, 416 и ошибка до записи тела
+    // потоков Resource не открывают, а Range с несколькими диапазонами открывает их несколько.
+    static OpenedFile closeAfterRequest(OpenedFile source) {
+        try {
+            RequestContextHolder.currentRequestAttributes().registerDestructionCallback(
+                    OpenedFile.class.getName() + "@" + System.identityHashCode(source), source::close, RequestAttributes.SCOPE_REQUEST);
+        } catch (RuntimeException ex) {
+            source.close();
+            throw ex;
+        }
+        return source;
     }
 
     // Право чтения проверяется до сравнения ETag: 304 не раскрывает существование недоступного файла.

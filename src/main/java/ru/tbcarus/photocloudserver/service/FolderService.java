@@ -93,6 +93,13 @@ public class FolderService {
         }
     }
 
+    // Общий режим блокировки дерева для открытия байтов: пока она держится, ни один путь владельца не меняется.
+    // Без ROOT у владельца нет и файлов: блокировать нечего, а запись файла не найдётся.
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void lockUserTreeForRead(Long ownerId) {
+        folderRepository.findRootByUserIdForShare(ownerId);
+    }
+
     // Файлы и папки каталога делят одно пространство имён. Строгая проверка — только под lockUserTree;
     // вне блокировки вызов лишь отказывает раньше, до работы с байтами.
     @Transactional(readOnly = true)

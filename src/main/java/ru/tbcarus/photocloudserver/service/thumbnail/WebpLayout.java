@@ -26,57 +26,62 @@ record WebpLayout(boolean fullDecode, byte[] exif) {
 
     static WebpLayout read(Path file) throws IOException {
         try (SeekableByteChannel channel = Files.newByteChannel(file)) {
-            long size = channel.size();
-            ByteBuffer header = readAt(channel, 0, 16);
-            if (header == null || !"RIFF".equals(fourCc(header, 0)) || !"WEBP".equals(fourCc(header, 8))) {
-                throw new ThumbnailUnreadableException("Invalid WebP header");
-            }
-            // Простой формат содержит только кадр: ни прозрачности, ни EXIF.
-            switch (fourCc(header, 12)) {
-                case "VP8 ":
-                    return new WebpLayout(false, null);
-                case "VP8L":
-                    return new WebpLayout(true, null);
-                case "VP8X":
-                    break;
-                default:
-                    throw new ThumbnailUnreadableException("Invalid WebP header");
-            }
-            ByteBuffer flags = readAt(channel, 20, 1);
-            if (flags == null) {
-                throw new ThumbnailUnreadableException("Invalid WebP header");
-            }
-            if ((flags.get(0) & VP8X_ANIMATION) != 0) {
-                throw new ThumbnailUnsupportedException("Animated WebP is not supported");
-            }
-            Boolean fullDecode = (flags.get(0) & VP8X_ALPHA) != 0 ? Boolean.TRUE : null;
-            byte[] exif = null;
-            long position = 12;
-            for (int i = 0; i < MAX_CHUNKS && position + 8 <= size; i++) {
-                ByteBuffer chunk = readAt(channel, position, 8);
-                if (chunk == null) {
-                    break;
-                }
-                long length = Integer.toUnsignedLong(chunk.getInt(4));
-                switch (fourCc(chunk, 0)) {
-                    case "VP8 " -> fullDecode = fullDecode != null ? fullDecode : Boolean.FALSE;
-                    case "VP8L", "ALPH" -> fullDecode = Boolean.TRUE;
-                    case "EXIF" -> {
-                        if (length <= MAX_EXIF_LENGTH) {
-                            ByteBuffer data = readAt(channel, position + 8, (int) length);
-                            exif = data == null ? null : data.array();
-                        }
-                    }
-                    default -> {
-                    }
-                }
-                position += 8 + length + (length & 1);
-            }
-            if (fullDecode == null) {
-                throw new ThumbnailUnreadableException("WebP image data not found");
-            }
-            return new WebpLayout(fullDecode, exif);
+            return read(channel);
         }
+    }
+
+    // Канал не закрывается: им владеет вызывающий код.
+    static WebpLayout read(SeekableByteChannel channel) throws IOException {
+        long size = channel.size();
+        ByteBuffer header = readAt(channel, 0, 16);
+        if (header == null || !"RIFF".equals(fourCc(header, 0)) || !"WEBP".equals(fourCc(header, 8))) {
+            throw new ThumbnailUnreadableException("Invalid WebP header");
+        }
+        // Простой формат содержит только кадр: ни прозрачности, ни EXIF.
+        switch (fourCc(header, 12)) {
+            case "VP8 ":
+                return new WebpLayout(false, null);
+            case "VP8L":
+                return new WebpLayout(true, null);
+            case "VP8X":
+                break;
+            default:
+                throw new ThumbnailUnreadableException("Invalid WebP header");
+        }
+        ByteBuffer flags = readAt(channel, 20, 1);
+        if (flags == null) {
+            throw new ThumbnailUnreadableException("Invalid WebP header");
+        }
+        if ((flags.get(0) & VP8X_ANIMATION) != 0) {
+            throw new ThumbnailUnsupportedException("Animated WebP is not supported");
+        }
+        Boolean fullDecode = (flags.get(0) & VP8X_ALPHA) != 0 ? Boolean.TRUE : null;
+        byte[] exif = null;
+        long position = 12;
+        for (int i = 0; i < MAX_CHUNKS && position + 8 <= size; i++) {
+            ByteBuffer chunk = readAt(channel, position, 8);
+            if (chunk == null) {
+                break;
+            }
+            long length = Integer.toUnsignedLong(chunk.getInt(4));
+            switch (fourCc(chunk, 0)) {
+                case "VP8 " -> fullDecode = fullDecode != null ? fullDecode : Boolean.FALSE;
+                case "VP8L", "ALPH" -> fullDecode = Boolean.TRUE;
+                case "EXIF" -> {
+                    if (length <= MAX_EXIF_LENGTH) {
+                        ByteBuffer data = readAt(channel, position + 8, (int) length);
+                        exif = data == null ? null : data.array();
+                    }
+                }
+                default -> {
+                }
+            }
+            position += 8 + length + (length & 1);
+        }
+        if (fullDecode == null) {
+            throw new ThumbnailUnreadableException("WebP image data not found");
+        }
+        return new WebpLayout(fullDecode, exif);
     }
 
     private static ByteBuffer readAt(SeekableByteChannel channel, long position, int length) throws IOException {

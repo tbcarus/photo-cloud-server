@@ -28,6 +28,7 @@ import ru.tbcarus.photocloudserver.model.dto.ShareResourceType;
 import ru.tbcarus.photocloudserver.repository.FileItemRepository;
 import ru.tbcarus.photocloudserver.repository.FolderRepository;
 import ru.tbcarus.photocloudserver.service.FileItemService;
+import ru.tbcarus.photocloudserver.service.storage.OpenedFile;
 import ru.tbcarus.photocloudserver.service.link.LinkAccess;
 import ru.tbcarus.photocloudserver.service.thumbnail.ThumbnailService;
 
@@ -168,8 +169,9 @@ public class PublicLinkController {
     }
 
     // Тело — Resource без буфера: Range/206 обслуживает Spring MVC, как у download владельца.
-    private ResponseEntity<Resource> serve(FileItem file, boolean inlineIfSafe) throws IOException {
-        Resource resource = fileItemService.getDownloadResource(file);
+    private ResponseEntity<Resource> serve(FileItem readable, boolean inlineIfSafe) {
+        OpenedFile resource = FileController.closeAfterRequest(fileItemService.openForRead(readable));
+        FileItem file = resource.file();
         String mimeType = file.getStoredObject().getDetectedMimeType();
         boolean inline = inlineIfSafe && INLINE_TYPES.contains(mimeType);
         return ResponseEntity.ok()

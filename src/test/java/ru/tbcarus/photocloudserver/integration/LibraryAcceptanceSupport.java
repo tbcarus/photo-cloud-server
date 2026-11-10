@@ -120,6 +120,17 @@ abstract class LibraryAcceptanceSupport extends AbstractIntegrationTest {
         return new RowGate(connection);
     }
 
+    // Общий режим ROOT: открытие байтов (download, источник copy) проходит, структурные изменения встают в очередь.
+    // Нужен, когда в очереди должна стоять публикация copy, а не открытие её источника.
+    protected RowGate holdRootShared(Long rootId) throws SQLException {
+        Connection connection = openConnection();
+        try (PreparedStatement statement = connection.prepareStatement("SELECT id FROM folder WHERE id = ? FOR SHARE")) {
+            statement.setLong(1, rootId);
+            statement.executeQuery();
+        }
+        return new RowGate(connection);
+    }
+
     // ROOT ещё не зафиксирован: конкурирующие INSERT ... ON CONFLICT ждут исхода этой транзакции.
     protected RowGate holdUncommittedRoot() throws SQLException {
         Connection connection = openConnection();

@@ -30,7 +30,6 @@ import ru.tbcarus.photocloudserver.service.storage.*;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -245,12 +244,13 @@ class FileItemServiceTest {
     void failedCopyLeavesNothingInFinalDirectory() throws Exception {
         User user = user();
         FileItem source = cameraSource(user);
-        // Байтов источника нет: копирование во временный файл падает до публикации.
+        // Байтов источника нет при существующей записи: ошибка хранилища (500) до публикации.
         Files.createDirectories(storageRoot.resolve("1/camera/2023"));
         mockCopyLookups(user, source);
 
         assertThatThrownBy(() -> fileItemService.copyFileForCurrentUser(5L, new CopyFileRequest(2L, null), user))
-                .isInstanceOf(NoSuchFileException.class);
+                .isInstanceOf(IOException.class)
+                .hasMessage("Physical object of the source is missing");
 
         assertThat(filesIn("1/camera/2023")).isZero();
         assertThat(tempFileCount()).isZero();
@@ -327,8 +327,14 @@ class FileItemServiceTest {
     private void mockCopyLookups(User user, FileItem source) {
         Folder target = Folder.builder().id(2L).user(user).name("Trips").folderType(FolderType.USER).build();
         when(fileItemRepository.findByIdAndUserId(5L, 1L)).thenReturn(Optional.of(source));
+        // Источник открывается по перечитанной под блокировкой записи; запись существует.
+        lenient().when(fileItemRepository.findWithRelationsById(5L)).thenReturn(Optional.of(source));
+        lenient().when(fileItemRepository.existsById(5L)).thenReturn(true);
         when(folderService.getFolderForUser(2L, user)).thenReturn(target);
     }
+
+    // SHA-256 строки "source": copy сверяет скопированные байты с checksum и размером источника.
+    private static final String SOURCE_CHECKSUM = "41cf6794ba4200b839c53531555f0f3998df4cbb01a4d5cb0b94e3ca5e23947d";
 
     private FileItem cameraSource(User user) {
         StoredObject storedObject = StoredObject.builder()
@@ -337,7 +343,7 @@ class FileItemServiceTest {
                 .filePath("1/camera/2023")
                 .filename("IMG_1.jpg_source.jpg")
                 .fileExtension("jpg")
-                .checksum("checksum")
+                .checksum(SOURCE_CHECKSUM)
                 .size(6L)
                 .detectedMimeType("image/jpeg")
                 .fileType(FileType.IMAGE)
@@ -347,7 +353,7 @@ class FileItemServiceTest {
                 .user(user)
                 .folder(Folder.builder().id(1L).user(user).name("Camera").folderType(FolderType.CAMERA).build())
                 .storedObject(storedObject)
-                .checksum("checksum")
+                .checksum(SOURCE_CHECKSUM)
                 .originalName("IMG_1.jpg")
                 .capturedAt(LocalDateTime.of(2023, 12, 31, 23, 30))
                 .uploadedAt(LocalDateTime.now())

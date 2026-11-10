@@ -3,8 +3,6 @@ package ru.tbcarus.photocloudserver.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.Resource;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -36,6 +34,7 @@ import ru.tbcarus.photocloudserver.service.metadata.FileMetadataExtractor;
 import ru.tbcarus.photocloudserver.service.storage.FileContentDetector;
 import ru.tbcarus.photocloudserver.service.storage.FilenameSanitizer;
 import ru.tbcarus.photocloudserver.service.storage.LibraryStorage;
+import ru.tbcarus.photocloudserver.service.storage.OpenedFile;
 import ru.tbcarus.photocloudserver.service.storage.OwnerMarker;
 import ru.tbcarus.photocloudserver.service.storage.StorageKeyGenerator;
 import ru.tbcarus.photocloudserver.service.storage.StoragePathResolver;
@@ -48,6 +47,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
@@ -191,21 +191,40 @@ public class FileItemService {
         return fileItemMapper.toDto(getReadableFile(fileId, user));
     }
 
-    public Resource getDownloadResource(FileItem fileItem) throws IOException {
-        Path path = libraryStorage.physicalPath(fileItem);
-        if (!Files.exists(path)) {
-            // Rename или move могли изменить путь после чтения записи; удалённый файл даст 404.
-            FileItem current = fileItemRepository.findWithRelationsById(fileItem.getId())
-                    .orElseThrow(() -> new FileItemNotFoundException(fileItem.getId()));
-            path = libraryStorage.physicalPath(current);
+    // Путь библиотеки вычисляется из имени: проверенная вне блокировки запись могла устареть, а её прежнее имя —
+    // достаться другому файлу. Поэтому запись перечитывается и файл открывается под общей блокировкой дерева владельца:
+    // все изменения путей идут под той же блокировкой. После открытия канал читает тот же объект, что бы ни стало с путём;
+    // транзакция и блокировка заканчиваются сразу после открытия, передача байтов идёт без них.
+    // Канал NIO на Windows не мешает rename и delete самого файла; папку с открытым файлом NTFS переименовать не даёт.
+    public OpenedFile openForRead(FileItem fileItem) {
+        Long ownerId = fileItem.getUser().getId();
+        AtomicReference<OpenedFile> opened = new AtomicReference<>();
+        try {
+            return new TransactionTemplate(transactionManager).execute(status -> {
+                folderService.lockUserTreeForRead(ownerId);
+                FileItem current = fileItemRepository.findWithRelationsById(fileItem.getId())
+                        .orElseThrow(() -> new FileItemNotFoundException(fileItem.getId()));
+                Path path = libraryStorage.physicalPath(current);
+                try {
+                    libraryStorage.ensureInsideStorage(path);
+                    if (!Files.isRegularFile(path)) {
+                        throw new FileItemNotFoundException(fileItem.getId());
+                    }
+                    opened.set(OpenedFile.open(current, path));
+                    return opened.get();
+                } catch (NoSuchFileException | AccessDeniedException ex) {
+                    throw new FileItemNotFoundException(fileItem.getId());
+                } catch (IOException ex) {
+                    throw new UncheckedIOException(ex);
+                }
+            });
+        } catch (RuntimeException ex) {
+            // Например, ошибка COMMIT после открытия: канал не должен остаться без владельца.
+            if (opened.get() != null) {
+                opened.get().close();
+            }
+            throw ex;
         }
-        libraryStorage.ensureInsideStorage(path);
-        // FileSystemResource читает через NIO: на Windows такой файл можно переименовать и удалить во время скачивания.
-        Resource resource = new FileSystemResource(path);
-        if (!resource.exists() || !resource.isReadable()) {
-            throw new FileItemNotFoundException(fileItem.getId());
-        }
-        return resource;
     }
 
     public FileItemDto renameFileForCurrentUser(Long fileId, RenameFileRequest request, User user) {
@@ -293,7 +312,7 @@ public class FileItemService {
         try {
             // Копируем в собственный temp: в конечном каталоге появляется только полностью записанная копия.
             tempFile = createTempFile();
-            copySourceBytes(sourceFile, user, tempFile);
+            copySourceBytes(sourceFile, tempFile);
 
             // Copy намеренно не использует dedup: пользователь получает независимый физический объект.
             FileItem saved = createCopiedStoredObjectAndFileItem(
@@ -314,15 +333,26 @@ public class FileItemService {
         }
     }
 
-    // Источник читается без блокировки: его могли удалить или перенести. Удалённый файл даёт 404, перенесённый читается заново.
-    private void copySourceBytes(FileItem sourceFile, User user, Path tempFile) throws IOException {
-        try (OutputStream outputStream = Files.newOutputStream(tempFile)) {
-            Files.copy(libraryStorage.physicalPath(sourceFile), outputStream);
-        } catch (NoSuchFileException ex) {
-            FileItem current = getFileForCurrentUser(sourceFile.getId(), user);
-            try (OutputStream outputStream = Files.newOutputStream(tempFile)) {
-                Files.copy(libraryStorage.physicalPath(current), outputStream);
+    // Источник открывается по актуальной записи под общей блокировкой дерева (удалённый даёт 404), байты копируются без неё.
+    // Новая запись получит checksum и размер источника, поэтому скопированные байты обязаны им соответствовать:
+    // расхождение означает, что байты на диске не те, что описывает запись, и копия не создаётся.
+    private void copySourceBytes(FileItem sourceFile, Path tempFile) throws IOException {
+        try (OpenedFile source = openForRead(sourceFile);
+             InputStream inputStream = source.getInputStream();
+             OutputStream outputStream = Files.newOutputStream(tempFile)) {
+            StreamedFileInfo copied = FileUtils.writeAndCalculateSHA256(inputStream, outputStream, Long.MAX_VALUE);
+            StoredObject stored = source.file().getStoredObject();
+            if (copied.size() != stored.getSize() || !copied.checksum().equals(stored.getChecksum())) {
+                log.error("Байты файла {} не совпадают с записью: размер {} вместо {}, checksum {} вместо {}",
+                        sourceFile.getId(), copied.size(), stored.getSize(), copied.checksum(), stored.getChecksum());
+                throw new IOException("Physical object does not match its record");
             }
+        } catch (FileItemNotFoundException ex) {
+            // Удалённый источник — 404; запись есть, а байтов нет — ошибка хранилища, как и прежде 500.
+            if (fileItemRepository.existsById(sourceFile.getId())) {
+                throw new IOException("Physical object of the source is missing", ex);
+            }
+            throw ex;
         }
     }
 
