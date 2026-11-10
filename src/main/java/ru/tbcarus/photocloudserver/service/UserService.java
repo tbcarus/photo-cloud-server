@@ -88,8 +88,7 @@ public class UserService implements UserDetailsService {
         if (!user.isEnabled() || user.isBanned()) {
             throw new InvalidCredentialsException();
         }
-        user.setLastLoginAt(LocalDateTime.now());
-        userRepository.save(user);
+        userRepository.updateLastLogin(user.getId(), LocalDateTime.now());
         String accessToken = jwtService.generateAccessToken(user);
         String refreshToken = jwtService.generateRefreshToken(user);
         return new LoginResponse(accessToken, refreshToken);

@@ -161,7 +161,7 @@ TODO: реализовать повторную отправку с cooldown, л
 
 ### `POST /api/v1/auth/login`
 
-Публичный endpoint. Принимает email/password, проверяет enabled/banned, обновляет `lastLoginAt`, выпускает access и refresh token.
+Публичный endpoint. Принимает email/password, проверяет enabled/banned, обновляет только `lastLoginAt` и `lastUpdate` (остальные поля пользователя, в том числе параллельно изменённый пароль, не перезаписываются), выпускает access и refresh token.
 
 Request:
 
