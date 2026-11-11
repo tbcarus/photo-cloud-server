@@ -88,10 +88,16 @@ public class UserService implements UserDetailsService {
         if (!user.isEnabled() || user.isBanned()) {
             throw new InvalidCredentialsException();
         }
-        userRepository.updateLastLogin(user.getId(), LocalDateTime.now());
-        String accessToken = jwtService.generateAccessToken(user);
-        String refreshToken = jwtService.generateRefreshToken(user);
-        return new LoginResponse(accessToken, refreshToken);
+        // Сессия выдаётся под блокировкой строки пользователя и только для проверенного пароля: reset,
+        // зафиксированный после проверки, отказывает во входе, а начатый позже отзовёт и эту сессию.
+        return new TransactionTemplate(transactionManager).execute(status -> {
+            User current = userRepository.findByIdForUpdate(user.getId()).orElseThrow(InvalidCredentialsException::new);
+            if (!current.getPassword().equals(user.getPassword()) || !current.isEnabled() || current.isBanned()) {
+                throw new InvalidCredentialsException();
+            }
+            userRepository.updateLastLogin(user.getId(), LocalDateTime.now());
+            return new LoginResponse(jwtService.generateAccessToken(current), jwtService.generateRefreshToken(current));
+        });
     }
 
     public void logout(LogoutRequest logoutRequest, User user) {

@@ -21,6 +21,7 @@ import ru.tbcarus.photocloudserver.model.TokenType;
 import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.model.dto.RefreshResponse;
 import ru.tbcarus.photocloudserver.repository.RefreshTokenRepository;
+import ru.tbcarus.photocloudserver.repository.UserRepository;
 
 import java.security.Key;
 import java.time.Duration;
@@ -35,6 +36,7 @@ import java.util.function.Function;
 public class JwtService {
     // Generates, validates, refreshes, and revokes JWT access and refresh tokens.
     private final RefreshTokenRepository refreshTokenRepository;
+    private final UserRepository userRepository;
 
     @Value("${token.signing.key}")
     private String jwtSigningKey;
@@ -160,6 +162,9 @@ public class JwtService {
         if (Instant.now().isBefore(rotationStart)) {
             return new RefreshResponse(accessToken, null);
         }
+        // Новая сессия R2 выдаётся под блокировкой строки пользователя, как и смена пароля: reset, зафиксированный
+        // раньше, уже отозвал R1 (условный отзыв ниже вернёт 0), а начатый позже отзовёт и R2.
+        userRepository.findByIdForUpdate(user.getId());
         // Условный отзыв: из параллельных refresh одного R1 заменить его может только один.
         if (refreshTokenRepository.revokeIfActive(tokenDb.getId(), LocalDateTime.now()) != 1) {
             throw new TokenRevokedException(tokenDb.getToken(), "token revoked");

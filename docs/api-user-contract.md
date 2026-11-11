@@ -329,7 +329,11 @@ Response `200 OK`:
 }
 ```
 
-Важно: текущая реализация не отзывает refresh token после смены пароля.
+Успешный confirm в той же транзакции отзывает все refresh token пользователя: дальнейший `POST /api/v1/auth/refresh-token` с ними → `403 REFRESH_TOKEN_REVOKED`. Уже выданные access token действуют до истечения TTL. Неуспешный confirm (`400`: неизвестный, использованный, просроченный code или невалидный пароль) пароль и сессии не меняет.
+
+Выдача refresh при login и замена refresh сериализуются с confirm блокировкой строки пользователя: login, проверивший старый пароль до фиксации confirm, получает `401 INVALID_CREDENTIALS`; замена refresh, ожидавшая confirm, — `403 REFRESH_TOKEN_REVOKED`.
+
+Операций смены пароля авторизованным пользователем и блокировки пользователя в API нет; флаг `banned`, изменённый напрямую в БД, refresh token не отзывает.
 
 ### Reserved password endpoints
 

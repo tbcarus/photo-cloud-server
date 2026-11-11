@@ -39,6 +39,7 @@ class EmailRequestServiceValidDaysTest {
             .withBean(UserRepository.class, () -> mock(UserRepository.class))
             .withBean(EmailRequestRepository.class, () -> mock(EmailRequestRepository.class))
             .withBean(PasswordEncoder.class, () -> mock(PasswordEncoder.class))
+            .withBean(JwtService.class, () -> mock(JwtService.class))
             .withUserConfiguration(EmailRequestService.class);
 
     @Test
@@ -92,7 +93,7 @@ class EmailRequestServiceValidDaysTest {
                     .build();
             EmailRequest previousCode = EmailRequest.builder().type(PASSWORD_RESET).user(user).build();
             when(emailRequestRepository.findByCode("reset-code")).thenReturn(Optional.of(code));
-            when(context.getBean(UserRepository.class).findById(1L)).thenReturn(Optional.of(user));
+            when(context.getBean(UserRepository.class).findByIdForUpdate(1L)).thenReturn(Optional.of(user));
             when(emailRequestRepository.findAllByUserIdAndCreatedAtBetweenAndTypeOrderByCreatedAtDesc(
                     eq(1L), any(), any(), eq(PASSWORD_RESET))).thenReturn(List.of(previousCode));
 
@@ -106,6 +107,8 @@ class EmailRequestServiceValidDaysTest {
             assertThat(windowStart.getValue()).isBetween(before.minusDays(5), after.minusDays(5));
             assertThat(code.isUsed()).isTrue();
             assertThat(previousCode.isUsed()).isTrue();
+            // Успешный reset отзывает все refresh-сессии пользователя.
+            verify(context.getBean(JwtService.class)).revokeAll(user);
         });
     }
 

@@ -10,6 +10,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import ru.tbcarus.photocloudserver.model.Role;
 import ru.tbcarus.photocloudserver.model.User;
 import ru.tbcarus.photocloudserver.repository.RefreshTokenRepository;
+import ru.tbcarus.photocloudserver.repository.UserRepository;
 
 import java.time.Duration;
 import java.util.Set;
@@ -25,6 +26,7 @@ class JwtServiceTtlTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
             .withInitializer(new ConfigDataApplicationContextInitializer())
             .withBean(RefreshTokenRepository.class, () -> mock(RefreshTokenRepository.class))
+            .withBean(UserRepository.class, () -> mock(UserRepository.class))
             .withUserConfiguration(JwtService.class)
             .withPropertyValues("token.signing.key=" + KEY);
 

@@ -96,7 +96,8 @@ class LoginUpdateIntegrationTest extends AbstractIntegrationTest {
         Map<String, Object> afterReset = row(user.getId());
         resetDone.countDown();
 
-        assertThat(racingLogin.get(10, TimeUnit.SECONDS)).isEqualTo(200);
+        // Пароль сменился после проверки: вход без сессии (Q-04), время входа не пишется.
+        assertThat(racingLogin.get(10, TimeUnit.SECONDS)).isEqualTo(401);
         assertThat(row(user.getId()).get("password")).isEqualTo(resetHash);
         assertThat(withoutTimes(row(user.getId()))).isEqualTo(withoutTimes(afterReset));
         assertThat(login("newpass")).isEqualTo(200);

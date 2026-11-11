@@ -30,6 +30,7 @@ public class EmailRequestService {
     private final UserRepository userRepository;
     private final EmailRequestRepository emailRequestRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
     @Value("${auth.request.activation-valid-days}")
     private int activationValidDays;
@@ -124,8 +125,11 @@ public class EmailRequestService {
     public void resetPassword(String password, String code) {
         EmailRequest emailRequest = getEmailRequestByCode(code);
         checkEmailRequest(emailRequest, EmailRequestType.PASSWORD_RESET);
-        User user = userRepository.findById(emailRequest.getUser().getId()).get();
+        // Блокировка строки — первой: login и замена refresh ждут фиксации нового пароля и отзыва сессий.
+        User user = userRepository.findByIdForUpdate(emailRequest.getUser().getId()).get();
         user.setPassword(passwordEncoder.encode(password));
+        // В той же транзакции, что новый пароль: неуспешный reset сессии не трогает, успешный отзывает все.
+        jwtService.revokeAll(user);
         emailRequest.setUsed(true);
         List<EmailRequest> list = emailRequestRepository.findAllByUserIdAndCreatedAtBetweenAndTypeOrderByCreatedAtDesc(
                 user.getId(),
