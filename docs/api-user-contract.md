@@ -43,7 +43,7 @@
 
 | Status | Когда |
 | --- | --- |
-| 400 | validation error, malformed body, missing query param, неверный/использованный/истекший email-code (для `register/confirm` — HTML-страница, см. ниже) |
+| 400 | validation error, malformed body, missing query param, неверный/использованный/истекший email-code (для `register/confirm` и `password/reset/page` — HTML-страница, см. ниже) |
 | 401 | неверный login/password, disabled/banned user (в том числе при refresh), invalid refresh token, нет или невалидный access token, refresh token вместо access |
 | 403 | refresh token отозван или принадлежит другому пользователю |
 | 404 | refresh token не найден в logout/logout-others |
@@ -335,13 +335,39 @@ Response `200 OK`:
 
 Операций смены пароля авторизованным пользователем и блокировки пользователя в API нет; флаг `banned`, изменённый напрямую в БД, refresh token не отзывает.
 
+### `GET /api/v1/auth/password/reset/page?code=...`
+
+Публичная HTML-страница, на которую ведёт ссылка из письма reset/request. Открывается в браузере без JWT. Код проверяется предварительно (тип `PASSWORD_RESET`, не использован, не истёк) и ничего не меняет.
+
+| Status | Страница |
+| --- | --- |
+| 200 | Форма: «Новый пароль», «Повторите пароль», «Сохранить пароль», подсказка о длине пароля (из правил `PasswordResetConfirmRequest`) |
+| 400 | «Ссылка недействительна»: code отсутствует, неизвестен, использован, просрочен или другого назначения; формы нет |
+| 500 | «Не удалось изменить пароль» без технических подробностей |
+
+Форма отправляется на относительный адрес `page` (то есть `POST .../reset/page` под тем же базовым путём, в том числе за reverse proxy), code передаётся скрытым полем формы. Несовпадение паролей проверяется скриптом страницы до отправки.
+
+### `POST /api/v1/auth/password/reset/page`
+
+Публичный endpoint отправки формы. Request — `application/x-www-form-urlencoded`: `code`, `password`, `passwordConfirm`. Выполняет ту же операцию, что `reset/confirm` (смена пароля, погашение reset-кодов, отзыв refresh token); ответ — всегда HTML без JSON ErrorResponse, введённый пароль в ответ не возвращается.
+
+| Status | Когда | Страница |
+| --- | --- | --- |
+| 200 | пароль изменён | «Пароль успешно изменён» |
+| 400 | `password` отсутствует или не равен `passwordConfirm` | форма с ошибкой «Пароли не совпадают» |
+| 400 | пароль не проходит правила `reset/confirm` (непустой, 4–20 символов) | форма с текстом правила |
+| 400 | code отсутствует, неизвестен, использован (в том числе повторная отправка после успеха), просрочен или другого назначения | «Ссылка недействительна» |
+| 500 | непредвиденная ошибка | «Не удалось изменить пароль» |
+
+Неуспешная отправка не меняет пароль, код и сессии.
+
+Заголовки обоих ответов страницы: `Content-Type: text/html;charset=UTF-8`, `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex, nofollow`, `Content-Security-Policy: default-src 'none'; script-src 'nonce-…'; style-src 'nonce-…'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'` — nonce новый в каждом ответе, внешних ресурсов нет.
+
 ### Reserved password endpoints
 
 | Method | Path | Status | Response |
 | --- | --- | --- | --- |
 | POST | `/api/v1/auth/password/reset/resend` | 501 | `{"message":"Password reset resend is not implemented yet"}` |
-| GET | `/api/v1/auth/password/reset/page?code=...` | 501 | `{"message":"Password reset page is not implemented yet"}` |
-| POST | `/api/v1/auth/password/reset/page` | 501 | `{"message":"Password reset page submit is not implemented yet"}` |
 
 ## Profile
 
