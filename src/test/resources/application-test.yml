@@ -26,6 +26,9 @@ sharing:
 storage:
   pending-delete-interval: PT1H # тесты запускают очистку сами
 
+upload:
+  maintenance-interval: PT1H # адресные тесты запускают восстановление сами
+
 logging:
   level:
     liquibase: warn

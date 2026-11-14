@@ -49,6 +49,7 @@ public class FolderService {
     private final LibraryStorage libraryStorage;
     private final PlatformTransactionManager transactionManager;
     private final ReadAccess readAccess;
+    private final ru.tbcarus.photocloudserver.service.upload.UploadPublicationRecovery uploadPublicationRecovery;
 
     // Единственный маршрут без явной папки: подходящее медиа идёт в Camera, для обычных файлов папку выбирает клиент.
     @Transactional
@@ -91,6 +92,7 @@ public class FolderService {
             folderRepository.insertRootIfAbsent(user.getId(), ROOT_FOLDER_NAME);
             folderRepository.findRootByUserIdForUpdate(user.getId()).orElseThrow();
         }
+        uploadPublicationRecovery.recover(user.getId());
     }
 
     // Общий режим блокировки дерева для открытия байтов: пока она держится, ни один путь владельца не меняется.

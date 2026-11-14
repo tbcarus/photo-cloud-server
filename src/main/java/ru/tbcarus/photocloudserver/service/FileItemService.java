@@ -166,6 +166,54 @@ public class FileItemService {
         return fileItemRepository.findAllByUserId(user.getId(), pageable).map(fileItemMapper::toDto);
     }
 
+    public void validateUploadTarget(User user, Long folderId, String name, UUID backupSource) {
+        Folder folder = folderService.getFolderForUser(folderId, user);
+        folderService.ensureCanHoldFiles(folder);
+        folderService.ensureWritable(folder, backupSource);
+        uploadName(folder, name);
+    }
+
+    // Проверенный файл сборки не перемещается: публикация и результат сессии принадлежат одной транзакции.
+    public void registerResumable(ru.tbcarus.photocloudserver.model.UploadSession session, User user, Path source,
+                                  java.util.function.BiConsumer<Path, FileItemDto> publishAndComplete) throws IOException {
+        String mime = fileContentDetector.detectMimeType(source);
+        FileType type = FileType.fromMimeType(mime);
+        ExtractedFileMetadata metadata = fileMetadataExtractor.extract(source, mime);
+        LocalDateTime uploaded = LocalDateTime.now();
+        LocalDateTime captured = metadata.getCapturedAt() == null ? uploaded : metadata.getCapturedAt();
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            folderService.lockUserTree(user);
+            Folder folder = folderService.getFolderForUser(session.getFolderId(), user);
+            folderService.ensureCanHoldFiles(folder);
+            folderService.ensureWritable(folder, session.getBackupSource());
+            String name = uploadName(folder, session.getOriginalFilename());
+            Optional<FileItem> existing = findUploadedFile(user, folder, name, session.getChecksum());
+            if (existing.isPresent()) {
+                publishAndComplete.accept(null, fileItemMapper.toDto(existing.get()));
+                return;
+            }
+            boolean camera = isCamera(folder);
+            StoredObject object = storedObjectRepository.save(StoredObject.builder()
+                    .user(user).checksum(session.getChecksum()).size(session.getSize())
+                    .detectedMimeType(mime).fileType(type)
+                    .filePath(camera ? storageKeyGenerator.generateCameraPath(user.getId(), captured) : null)
+                    .filename(camera ? storageKeyGenerator.generateFilename(name, mime) : null)
+                    .fileExtension(camera ? filenameSanitizer.extension(name, mime) : null).build());
+            FileItem saved = saveFileItem(user, folder, object, name, captured, uploaded, metadata);
+            fileItemRepository.flush();
+            Path destination = libraryStorage.physicalPath(saved);
+            try {
+                if (camera) Files.createDirectories(destination.getParent());
+                else libraryStorage.createLibraryRoot(user.getId());
+                libraryStorage.ensureInsideStorage(destination);
+            } catch (IOException ex) {
+                throw new UncheckedIOException(ex);
+            }
+            publishAndComplete.accept(destination, fileItemMapper.toDto(saved));
+        });
+        ensureOwnerMarker(user);
+    }
+
     public Page<FileItemDto> getUserFiles(Pageable pageable, User user, Long folderId) {
         if (folderId == null) {
             return getUserFiles(pageable, user);

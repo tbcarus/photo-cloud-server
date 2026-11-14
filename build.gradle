@@ -67,6 +67,8 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // Smoke запускает отдельные JVM Server с теми же классами и изолированной конфигурацией.
+    systemProperty 'photocloud.test.classpath', sourceSets.test.runtimeClasspath.asPath
     testLogging {
         showStandardStreams = true
     }

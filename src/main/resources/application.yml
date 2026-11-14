@@ -32,8 +32,8 @@ spring:
           quitwait: false # не ждать ответа на QUIT после принятого письма
   servlet:
     multipart:
-      max-file-size: 110MB
-      max-request-size: 110MB
+      max-file-size: ${storage.max-file-size-bytes}B
+      max-request-size: 51MB # 50 MiB данных + 1 MiB на multipart-поля и заголовки
       file-size-threshold: 0
 
 server:
@@ -50,11 +50,20 @@ token:
 
 storage:
   root: ${STORAGE_ROOT:storage} # корневая папка физического хранения файлов
-  max-file-size-bytes: 104857600
+  max-file-size-bytes: 52428800 # 50 MiB, только multipart
   temp-dir: ${STORAGE_TEMP_DIR:${STORAGE_ROOT:storage}/tmp}
   pending-delete-interval: PT1M # пауза между проходами очистки .pending-delete
   physical-filename:
     original-name-max-length: 80
+
+upload:
+  max-file-size-bytes: 21474836480 # 20 GiB, resumable
+  max-chunk-size-bytes: 16777216 # 16 MiB
+  max-reserved-bytes: 42949672960 # 40 GiB незавершённых сессий: два максимальных файла
+  max-concurrent-chunks: 4 # максимум 64 MiB дополнительных временных блоков
+  inactivity-ttl: P30D
+  result-ttl: P30D
+  maintenance-interval: PT10S # восстановление, финализация и повтор очистки
 
 auth:
   request:

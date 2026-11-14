@@ -27,6 +27,12 @@ import java.util.UUID;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(UploadSessionException.class)
+    public ResponseEntity<ErrorResponse> handleUploadSession(UploadSessionException ex) {
+        return ResponseEntity.status(ex.getStatus()).contentType(MediaType.APPLICATION_JSON)
+                .body(error(ErrorCode.UPLOAD_SESSION_ERROR, ex.getReason()));
+    }
+
     private ErrorResponse error(ErrorCode code, String message) {
         return ErrorResponse.builder()
                 .id(UUID.randomUUID())
